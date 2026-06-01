@@ -280,6 +280,8 @@
     const DEFAULT_CARD_NAME = 'mystic';
     const CAMERA_WIDTH = 640;
     const CAMERA_HEIGHT = 480;
+    const PROGRESS_UPDATE_INTERVAL_MS = 220;
+    const INTRO_AUTO_HIDE_MS = 3400;
 
     const canvas = document.getElementById('scene');
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -297,8 +299,9 @@
 
     const starGeo = new THREE.BufferGeometry();
     const stars = [];
+    const randCoord = () => (Math.random() - 0.5) * STAR_FIELD_SIZE;
     for (let i = 0; i < STAR_COUNT; i += 1) {
-      stars.push((Math.random() - 0.5) * STAR_FIELD_SIZE, (Math.random() - 0.5) * STAR_FIELD_SIZE, (Math.random() - 0.5) * STAR_FIELD_SIZE);
+      stars.push(randCoord(), randCoord(), randCoord());
     }
     starGeo.setAttribute('position', new THREE.Float32BufferAttribute(stars, 3));
     const starMat = new THREE.PointsMaterial({ size: 0.9, color: 0xbfd3ff, transparent: true, opacity: 0.8 });
@@ -346,11 +349,11 @@
         return makeCardTexture(fallbackLabel, rainbowMode);
       }
       const img = new Image();
-      img.src = base64;
       const tex = new THREE.Texture(img);
       img.onload = () => {
         tex.needsUpdate = true;
       };
+      img.src = base64;
       return tex;
     }
 
@@ -427,7 +430,7 @@
       progress = Math.min(progress + Math.random() * PROGRESS_STEP_MAX, PROGRESS_SOFT_CAP);
       progressBar.style.width = `${progress.toFixed(0)}%`;
       progressText.textContent = `准备资源 ${progress.toFixed(0)}%`;
-    }, 220);
+    }, PROGRESS_UPDATE_INTERVAL_MS);
 
     window.addEventListener('load', () => {
       clearInterval(timer);
@@ -438,7 +441,7 @@
         loadingEl.classList.add('hidden');
         introEl.classList.remove('hidden');
         gsap.fromTo('.header, .stats, #gestureBtn', { y: -20, opacity: 0 }, { y: 0, opacity: 1, stagger: 0.08, duration: 0.8 });
-        setTimeout(() => introEl.classList.add('hidden'), 3400);
+        setTimeout(() => introEl.classList.add('hidden'), INTRO_AUTO_HIDE_MS);
       }, 300);
     });
 
