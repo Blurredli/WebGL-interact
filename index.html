@@ -6,13 +6,23 @@
   <title>宇宙级3D卡牌抽取</title>
   <script>
     (function () {
+      var waitBodyListenerBound = false;
       function ensureBox() {
         var box = document.getElementById('error-box');
         if (!box) {
           box = document.createElement('div');
           box.id = 'error-box';
           box.style.cssText = 'position:fixed;left:12px;right:12px;bottom:12px;z-index:99999;display:flex;flex-direction:column;gap:6px;pointer-events:none;';
-          document.addEventListener('DOMContentLoaded', function () { document.body.appendChild(box); });
+          if (document.body) {
+            document.body.appendChild(box);
+          } else if (!waitBodyListenerBound) {
+            waitBodyListenerBound = true;
+            document.addEventListener('DOMContentLoaded', function () {
+              if (!document.getElementById('error-box')) {
+                document.body.appendChild(box);
+              }
+            }, { once: true });
+          }
         }
         return box;
       }
@@ -32,6 +42,8 @@
     })();
   </script>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Noto+Sans+SC:wght@400;600&display=swap');
+
     :root {
       --glass: rgba(255, 255, 255, 0.08);
       --line: rgba(255, 255, 255, 0.2);
@@ -48,7 +60,7 @@
       overflow: hidden;
       background: radial-gradient(circle at top, #1f245f 0%, #090b14 50%, #05060a 100%);
       color: var(--text);
-      font-family: "Inter", "PingFang SC", "Microsoft YaHei", sans-serif;
+      font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif;
     }
     #app {
       position: fixed;
@@ -80,6 +92,8 @@
       margin: 0;
       font-size: clamp(18px, 4vw, 32px);
       line-height: 1;
+      font-family: "Orbitron", "Noto Sans SC", sans-serif;
+      letter-spacing: 0.06em;
       background: linear-gradient(90deg, #88b8ff, #9ffff5, #d196ff);
       -webkit-background-clip: text;
       background-clip: text;
@@ -110,12 +124,77 @@
       cursor: pointer;
     }
     .btn:hover { background: rgba(255, 255, 255, 0.18); }
+    .btn[disabled] { opacity: 0.45; cursor: not-allowed; }
     #history {
       margin: 0;
       padding-left: 16px;
       max-height: 120px;
       overflow: auto;
       font-size: 12px;
+    }
+    .tool-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .deck-hud {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: 84px;
+      z-index: 22;
+      width: min(660px, calc(100vw - 24px));
+      padding: 10px 12px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 10px;
+      overflow: hidden;
+    }
+    .deck-hud::before {
+      content: '';
+      position: absolute;
+      left: -20%;
+      right: -20%;
+      top: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, rgba(115, 245, 255, 0.9), transparent);
+      animation: scan 2.4s linear infinite;
+    }
+    @keyframes scan {
+      0% { transform: translateX(-40%); }
+      100% { transform: translateX(40%); }
+    }
+    .deck-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+    .deck-meta strong {
+      font-family: "Orbitron", "Noto Sans SC", sans-serif;
+      letter-spacing: 0.05em;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .deck-meta span {
+      font-size: 12px;
+      opacity: 0.8;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .deck-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .deck-actions .btn {
+      padding: 7px 10px;
+      white-space: nowrap;
     }
 
     .gesture-btn {
@@ -132,6 +211,7 @@
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
       cursor: pointer;
+      touch-action: none;
     }
 
     #cursor {
@@ -197,10 +277,19 @@
     }
     .hidden { display: none !important; }
     #camera { display: none; }
+    #scene { touch-action: none; }
 
     @media (max-width: 640px) {
       .stats { top: 78px; width: calc(100% - 24px); }
       .row { font-size: 12px; }
+      .deck-hud {
+        bottom: 72px;
+        grid-template-columns: 1fr;
+      }
+      .deck-actions {
+        width: 100%;
+        justify-content: space-between;
+      }
       .gesture-btn { bottom: 14px; }
     }
   </style>
@@ -220,15 +309,32 @@
       <input id="rainbowMode" type="checkbox" />
     </div>
     <div class="row"><span>卡牌总数</span><strong id="cardTotal">0</strong></div>
+    <div class="row"><span>当前展示</span><strong id="currentCard">--</strong></div>
     <div class="row"><span>抽卡记录</span><span class="small">最新5条</span></div>
     <ol id="history"></ol>
+    <div class="tool-row">
+      <button id="prevCardBtn" class="btn" type="button">上一张</button>
+      <button id="nextCardBtn" class="btn" type="button">下一张</button>
+      <button id="multiDrawBtn" class="btn" type="button">连抽3张</button>
+    </div>
     <button id="fullscreenBtn" class="btn" type="button">全屏切换</button>
   </aside>
+
+  <div id="deckHud" class="deck-hud glass">
+    <div class="deck-meta">
+      <strong id="focusTitle">轨道卡库：暂无卡牌</strong>
+      <span id="gestureHint">调试提示：拖拽/滚轮/方向键可切卡；点击画面可抽卡</span>
+    </div>
+    <div class="deck-actions">
+      <button id="hudPrevBtn" class="btn" type="button">◀ 轨道左滑</button>
+      <button id="hudNextBtn" class="btn" type="button">轨道右滑 ▶</button>
+    </div>
+  </div>
 
   <button id="gestureBtn" class="gesture-btn" type="button">唤醒手势抽卡</button>
   <div id="cursor"></div>
   <div id="toast" class="toast"></div>
-  <video id="camera" playsinline></video>
+  <video id="camera" playsinline muted autoplay></video>
 
   <div id="loading" class="overlay">
     <h2>宇宙传送门构建中…</h2>
@@ -243,23 +349,95 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/Pass.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
 
   <script>
+    (function () {
+    // 预留可替换卡图数据，保持 key 作为卡池标识
     const PHOTO_BASE64 = {
       nebula: '',
       aurora: '',
       supernova: ''
     };
+    const RENDER_PIXEL_RATIO_CAP = 2;
+    const STAR_COUNT = window.innerWidth < 768 ? 1800 : 2600;
+    const CARD_DISPLAY_MS = 1500;
+    const DRAW_COOLDOWN_MS = 900;
+    const CARD_STACK_LIMIT = 36;
+    const PROGRESS_STEP_MAX = 18;
+    const PROGRESS_SOFT_CAP = 92;
+    const HAND_DETECTION_CONFIDENCE = 0.6;
+    const HAND_TRACKING_CONFIDENCE = 0.6;
+    const PINCH_THRESHOLD = 0.05;
+    const HAND_SWIPE_THRESHOLD = 0.075;
+    const SWIPE_COOLDOWN_MS = 460;
+    const POINTER_SWIPE_THRESHOLD_PX = 34;
+    const PALM_BURST_HOLD_MS = 900;
+    const BURST_COOLDOWN_MS = 4200;
+    const BURST_COUNT = 3;
+    const STAR_FIELD_SIZE = 520;
+    const DEFAULT_CARD_NAME = 'mystic';
+    const CAMERA_WIDTH = 640;
+    const CAMERA_HEIGHT = 480;
+    const MOBILE_CAMERA_WIDTH = 480;
+    const MOBILE_CAMERA_HEIGHT = 360;
+    const PROGRESS_UPDATE_INTERVAL_MS = 220;
+    const INTRO_AUTO_HIDE_MS = 3400;
+    const TOAST_DISPLAY_MS = 1600;
+    const FALLBACK_LOADING_HIDE_DELAY_MS = 260;
+    const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
+    const loadingEl = document.getElementById('loading');
+    const introEl = document.getElementById('intro');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    const skipBtn = document.getElementById('skipIntro');
+    const gestureBtn = document.getElementById('gestureBtn');
+    const prevCardBtn = document.getElementById('prevCardBtn');
+    const nextCardBtn = document.getElementById('nextCardBtn');
+    const multiDrawBtn = document.getElementById('multiDrawBtn');
+    const fullscreenBtn = document.getElementById('fullscreenBtn');
+    const currentCardEl = document.getElementById('currentCard');
+    const focusTitleEl = document.getElementById('focusTitle');
+    const gestureHintEl = document.getElementById('gestureHint');
+    const hudPrevBtn = document.getElementById('hudPrevBtn');
+    const hudNextBtn = document.getElementById('hudNextBtn');
+
+    function enterFallbackMode(message) {
+      progressBar.style.width = '100%';
+      progressText.textContent = message;
+      setTimeout(() => {
+        loadingEl.classList.add('hidden');
+      }, FALLBACK_LOADING_HIDE_DELAY_MS);
+      introEl.classList.add('hidden');
+      gestureBtn.disabled = true;
+      gestureBtn.textContent = '手势不可用';
+      const prev = document.getElementById('prevCardBtn');
+      const next = document.getElementById('nextCardBtn');
+      const multi = document.getElementById('multiDrawBtn');
+      if (prev) prev.disabled = true;
+      if (next) next.disabled = true;
+      if (multi) multi.disabled = true;
+      fullscreenBtn.disabled = true;
+    }
+
+    if (typeof window.THREE === 'undefined' || typeof window.gsap === 'undefined') {
+      enterFallbackMode('关键资源(Three.js/GSAP)加载失败，已进入基础模式（请检查网络后刷新）');
+      return;
+    }
 
     const canvas = document.getElementById('scene');
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, RENDER_PIXEL_RATIO_CAP));
     renderer.setSize(window.innerWidth, window.innerHeight);
 
     const scene = new THREE.Scene();
@@ -273,19 +451,28 @@
 
     const starGeo = new THREE.BufferGeometry();
     const stars = [];
-    for (let i = 0; i < 2600; i += 1) {
-      stars.push((Math.random() - 0.5) * 520, (Math.random() - 0.5) * 520, (Math.random() - 0.5) * 520);
+    const randCoord = () => (Math.random() - 0.5) * STAR_FIELD_SIZE;
+    for (let i = 0; i < STAR_COUNT; i += 1) {
+      stars.push(randCoord(), randCoord(), randCoord());
     }
     starGeo.setAttribute('position', new THREE.Float32BufferAttribute(stars, 3));
     const starMat = new THREE.PointsMaterial({ size: 0.9, color: 0xbfd3ff, transparent: true, opacity: 0.8 });
     const starField = new THREE.Points(starGeo, starMat);
     scene.add(starField);
 
-    const composer = new THREE.EffectComposer(renderer);
-    const renderPass = new THREE.RenderPass(scene, camera);
-    const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.25, 0.55, 0.2);
-    composer.addPass(renderPass);
-    composer.addPass(bloomPass);
+    let composer = null;
+    let bloomPass = null;
+    try {
+      composer = new THREE.EffectComposer(renderer);
+      const renderPass = new THREE.RenderPass(scene, camera);
+      bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.75, 0.4, 0.3);
+      composer.addPass(renderPass);
+      composer.addPass(bloomPass);
+    } catch (error) {
+      console.warn('后处理初始化失败，已降级为基础渲染：', error);
+      composer = null;
+      bloomPass = null;
+    }
 
     const cardGroup = new THREE.Group();
     scene.add(cardGroup);
@@ -322,11 +509,11 @@
         return makeCardTexture(fallbackLabel, rainbowMode);
       }
       const img = new Image();
-      img.src = base64;
       const tex = new THREE.Texture(img);
       img.onload = () => {
         tex.needsUpdate = true;
       };
+      img.src = base64;
       return tex;
     }
 
@@ -335,24 +522,113 @@
     const totalEl = document.getElementById('cardTotal');
     const toastEl = document.getElementById('toast');
     const rainbowModeEl = document.getElementById('rainbowMode');
+    const archiveCards = [];
+    let focusIndex = -1;
 
     let total = 0;
     function toast(msg) {
       toastEl.textContent = msg;
       toastEl.classList.add('show');
-      setTimeout(() => toastEl.classList.remove('show'), 1600);
+      setTimeout(() => toastEl.classList.remove('show'), TOAST_DISPLAY_MS);
     }
 
-    function drawCard() {
+    function updateArchiveLabel() {
+      if (focusIndex < 0 || !archiveCards[focusIndex]) {
+        currentCardEl.textContent = '--';
+        focusTitleEl.textContent = '轨道卡库：暂无卡牌';
+        return;
+      }
+      const current = archiveCards[focusIndex];
+      currentCardEl.textContent = current.name;
+      focusTitleEl.textContent = `轨道卡库：${focusIndex + 1}/${archiveCards.length} - ${current.name}`;
+    }
+
+    function layoutArchiveCards(animate) {
+      archiveCards.forEach((entry, index) => {
+        const offset = index - focusIndex;
+        const visible = Math.abs(offset) <= 8;
+        entry.mesh.visible = visible;
+        if (!visible) {
+          return;
+        }
+        const targetPosition = {
+          x: offset * 3.2,
+          y: -7.3 + Math.min(Math.abs(offset) * 0.08, 0.5),
+          z: -7.2 - Math.min(Math.abs(offset) * 1.45, 8.8)
+        };
+        const targetRotationY = offset * -0.26;
+        const targetScale = offset === 0 ? 0.66 : Math.max(0.44, 0.6 - Math.abs(offset) * 0.04);
+        entry.mat.emissive.setHex(offset === 0 ? 0x2e6586 : 0x0f1f31);
+        entry.mat.emissiveIntensity = offset === 0 ? 0.75 : 0.26;
+        entry.mat.opacity = offset === 0 ? 1 : Math.max(0.45, 1 - Math.abs(offset) * 0.12);
+
+        if (animate) {
+          gsap.to(entry.mesh.position, { ...targetPosition, duration: 0.5, ease: 'power2.out' });
+          gsap.to(entry.mesh.rotation, { y: targetRotationY, x: 0, z: 0, duration: 0.5, ease: 'power2.out' });
+          gsap.to(entry.mesh.scale, { x: targetScale, y: targetScale, z: targetScale, duration: 0.45, ease: 'power2.out' });
+        } else {
+          entry.mesh.position.set(targetPosition.x, targetPosition.y, targetPosition.z);
+          entry.mesh.rotation.set(0, targetRotationY, 0);
+          entry.mesh.scale.set(targetScale, targetScale, targetScale);
+        }
+      });
+      updateArchiveLabel();
+    }
+
+    function focusCard(nextIndex, source) {
+      if (!archiveCards.length) {
+        updateArchiveLabel();
+        return;
+      }
+      const capped = Math.max(0, Math.min(nextIndex, archiveCards.length - 1));
+      if (capped === focusIndex) {
+        return;
+      }
+      focusIndex = capped;
+      layoutArchiveCards(true);
+      if (source) {
+        toast(`轨道切换：${archiveCards[focusIndex].name}`);
+      }
+    }
+
+    function shiftFocus(delta, source) {
+      if (!archiveCards.length) return;
+      focusCard(focusIndex + delta, source);
+    }
+
+    function trimArchive() {
+      while (archiveCards.length > CARD_STACK_LIMIT) {
+        const removed = archiveCards.shift();
+        cardGroup.remove(removed.mesh);
+        removed.geo.dispose();
+        removed.mat.dispose();
+        removed.tex.dispose();
+        focusIndex = Math.max(0, focusIndex - 1);
+      }
+    }
+
+    function drawCard(source) {
       const rainbowMode = rainbowModeEl.checked;
-      const name = pool[Math.floor(Math.random() * pool.length)] || 'mystic';
+      const name = pool[Math.floor(Math.random() * pool.length)] || DEFAULT_CARD_NAME;
       const tex = textureFromBase64(PHOTO_BASE64[name], name.toUpperCase(), rainbowMode);
       const geo = new THREE.PlaneGeometry(8, 12);
-      const mat = new THREE.MeshStandardMaterial({ map: tex, metalness: 0.15, roughness: 0.45 });
+      const mat = new THREE.MeshStandardMaterial({
+        map: tex,
+        metalness: 0.18,
+        roughness: 0.38,
+        emissive: rainbowMode ? 0x0a1520 : 0x18314b,
+        emissiveIntensity: rainbowMode ? 0.15 : 0.45,
+        transparent: true,
+        opacity: 1
+      });
       const card = new THREE.Mesh(geo, mat);
       card.position.set((Math.random() - 0.5) * 7, -1, -20);
       card.rotation.y = -Math.PI;
+      card.scale.set(0.84, 0.84, 0.84);
       cardGroup.add(card);
+      archiveCards.push({ name, mesh: card, geo, mat, tex, createdAt: Date.now() });
+      trimArchive();
+      focusIndex = archiveCards.length - 1;
 
       gsap.to(card.position, { z: 1.5, y: 0.4, duration: 0.55, ease: 'power2.out' });
       gsap.to(card.rotation, { y: 0, duration: 0.9, ease: 'power3.out' });
@@ -365,21 +641,9 @@
         duration: 0.3,
         ease: 'sine.inOut'
       });
-
       setTimeout(() => {
-        gsap.to(card.position, {
-          z: -10,
-          y: -4,
-          duration: 1.6,
-          ease: 'power2.in',
-          onComplete: () => {
-            cardGroup.remove(card);
-            geo.dispose();
-            mat.dispose();
-            tex.dispose();
-          }
-        });
-      }, 1500);
+        layoutArchiveCards(true);
+      }, CARD_DISPLAY_MS);
 
       total += 1;
       totalEl.textContent = String(total);
@@ -389,23 +653,41 @@
       while (historyEl.children.length > 5) {
         historyEl.lastElementChild.remove();
       }
-      toast(`已抽到 ${name} 卡牌！`);
+      toast(`已抽到 ${name} 卡牌${source ? ` (${source})` : ''}！`);
+      updateArchiveLabel();
     }
 
-    const loadingEl = document.getElementById('loading');
-    const introEl = document.getElementById('intro');
-    const progressBar = document.getElementById('progressBar');
-    const progressText = document.getElementById('progressText');
-    const skipBtn = document.getElementById('skipIntro');
+    function drawBurst(count, source) {
+      for (let i = 0; i < count; i += 1) {
+        setTimeout(() => {
+          drawCard(source || '连抽');
+        }, i * 140);
+      }
+    }
+
+    function isFingerExtended(landmarks, tipIdx, pipIdx) {
+      return landmarks[tipIdx].y < landmarks[pipIdx].y - 0.02;
+    }
+
+    function isOpenPalm(landmarks, pinchDist) {
+      return pinchDist > PINCH_THRESHOLD * 1.8
+        && isFingerExtended(landmarks, 8, 6)
+        && isFingerExtended(landmarks, 12, 10)
+        && isFingerExtended(landmarks, 16, 14)
+        && isFingerExtended(landmarks, 20, 18);
+    }
 
     let progress = 0;
     const timer = setInterval(() => {
-      progress = Math.min(progress + Math.random() * 18, 92);
+      progress = Math.min(progress + Math.random() * PROGRESS_STEP_MAX, PROGRESS_SOFT_CAP);
       progressBar.style.width = `${progress.toFixed(0)}%`;
       progressText.textContent = `准备资源 ${progress.toFixed(0)}%`;
-    }, 220);
+    }, PROGRESS_UPDATE_INTERVAL_MS);
 
-    window.addEventListener('load', () => {
+    const LOADING_TIMEOUT_MS = 8000;
+    function finishLoading() {
+      if (finishLoading._done) return;
+      finishLoading._done = true;
       clearInterval(timer);
       progress = 100;
       progressBar.style.width = '100%';
@@ -413,10 +695,12 @@
       setTimeout(() => {
         loadingEl.classList.add('hidden');
         introEl.classList.remove('hidden');
-        gsap.fromTo('.header, .stats, #gestureBtn', { y: -20, opacity: 0 }, { y: 0, opacity: 1, stagger: 0.08, duration: 0.8 });
-        setTimeout(() => introEl.classList.add('hidden'), 3400);
+        gsap.fromTo('.header, .stats, #gestureBtn, #deckHud', { y: -20, opacity: 0 }, { y: 0, opacity: 1, stagger: 0.08, duration: 0.8 });
+        setTimeout(() => introEl.classList.add('hidden'), INTRO_AUTO_HIDE_MS);
       }, 300);
-    });
+    }
+    window.addEventListener('load', finishLoading);
+    setTimeout(finishLoading, LOADING_TIMEOUT_MS);
 
     skipBtn.addEventListener('click', () => {
       introEl.classList.add('hidden');
@@ -424,11 +708,16 @@
 
     const cursor = document.getElementById('cursor');
     const videoElement = document.getElementById('camera');
-    const gestureBtn = document.getElementById('gestureBtn');
     let cameraUtil = null;
+    let mediaStream = null;
+    let mediaPipeRafId = 0;
     let handEnabled = false;
     let isPinched = false;
     let canDraw = true;
+    let lastSwipeAt = 0;
+    let lastTipX = null;
+    let palmHoldSince = 0;
+    let lastBurstAt = 0;
 
     function updateCursor(x, y, pinched) {
       cursor.style.opacity = '1';
@@ -438,67 +727,252 @@
       cursor.style.transform = `translate(-50%, -50%) scale(${pinched ? 1.6 : 1})`;
     }
 
-    const hands = new Hands({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-    });
-    hands.setOptions({
-      maxNumHands: 1,
-      modelComplexity: 1,
-      minDetectionConfidence: 0.6,
-      minTrackingConfidence: 0.6
-    });
+    const handSdkReady = typeof window.Hands !== 'undefined';
+    const cameraUtilsReady = typeof window.Camera !== 'undefined';
+    let hands = null;
+    if (handSdkReady) {
+      hands = new Hands({
+        locateFile: (file) => {
+          const url = `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+          console.log('[Hands] locateFile:', url);
+          return url;
+        }
+      });
+      hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: isMobileDevice ? 0 : 1,
+        minDetectionConfidence: isMobileDevice ? 0.5 : HAND_DETECTION_CONFIDENCE,
+        minTrackingConfidence: isMobileDevice ? 0.5 : HAND_TRACKING_CONFIDENCE
+      });
 
-    hands.onResults((results) => {
-      if (!results.multiHandLandmarks || !results.multiHandLandmarks.length) {
-        cursor.style.opacity = handEnabled ? '0.3' : '0';
-        return;
-      }
-      const landmarks = results.multiHandLandmarks[0];
-      const tipIndex = landmarks[8];
-      const tipThumb = landmarks[4];
-      const dx = tipIndex.x - tipThumb.x;
-      const dy = tipIndex.y - tipThumb.y;
-      const pinchDist = Math.sqrt(dx * dx + dy * dy);
-      const pinched = pinchDist < 0.05;
-      updateCursor(tipIndex.x, tipIndex.y, pinched);
+      hands.onResults((results) => {
+        console.log('[Hands] onResults:', results.multiHandLandmarks ? results.multiHandLandmarks.length + ' hands' : 'no hands');
+        if (!results.multiHandLandmarks || !results.multiHandLandmarks.length) {
+          cursor.style.opacity = handEnabled ? '0.3' : '0';
+          lastTipX = null;
+          palmHoldSince = 0;
+          return;
+        }
+        const landmarks = results.multiHandLandmarks[0];
+        const tipIndex = landmarks[8];
+        const tipThumb = landmarks[4];
+        const dx = tipIndex.x - tipThumb.x;
+        const dy = tipIndex.y - tipThumb.y;
+        const pinchDist = Math.sqrt(dx * dx + dy * dy);
+        const pinched = pinchDist < PINCH_THRESHOLD;
+        updateCursor(tipIndex.x, tipIndex.y, pinched);
 
-      if (pinched && !isPinched && canDraw) {
-        canDraw = false;
-        drawCard();
-        setTimeout(() => { canDraw = true; }, 900);
+        if (pinched && !isPinched && canDraw) {
+          canDraw = false;
+          drawCard('捏合');
+          setTimeout(() => { canDraw = true; }, DRAW_COOLDOWN_MS);
+        }
+
+        const now = performance.now();
+        if (!pinched && lastTipX !== null && archiveCards.length > 1 && now - lastSwipeAt > SWIPE_COOLDOWN_MS) {
+          const swipeDeltaX = tipIndex.x - lastTipX;
+          if (Math.abs(swipeDeltaX) > HAND_SWIPE_THRESHOLD) {
+            lastSwipeAt = now;
+            shiftFocus(swipeDeltaX > 0 ? -1 : 1, '手势滑动');
+          }
+        }
+
+        if (isOpenPalm(landmarks, pinchDist)) {
+          if (!palmHoldSince) {
+            palmHoldSince = now;
+          } else if (now - palmHoldSince > PALM_BURST_HOLD_MS && now - lastBurstAt > BURST_COOLDOWN_MS) {
+            palmHoldSince = 0;
+            lastBurstAt = now;
+            drawBurst(BURST_COUNT, '开掌连抽');
+            toast('识别到开掌手势，触发连抽');
+          }
+        } else {
+          palmHoldSince = 0;
+        }
+
+        lastTipX = tipIndex.x;
+        isPinched = pinched;
+      });
+    } else {
+      gestureBtn.textContent = '手势资源加载失败';
+    }
+
+    async function startMediaPipeLoopWithStream(stream) {
+      mediaStream = stream;
+      videoElement.srcObject = stream;
+      videoElement.muted = true;
+      videoElement.setAttribute('playsinline', 'true');
+      videoElement.setAttribute('autoplay', 'true');
+      await videoElement.play();
+
+      const loop = async () => {
+        if (!handEnabled) return;
+        if (videoElement.readyState >= 2) {
+          await hands.send({ image: videoElement });
+        }
+        mediaPipeRafId = requestAnimationFrame(loop);
+      };
+      mediaPipeRafId = requestAnimationFrame(loop);
+    }
+
+    function stopCameraFeed() {
+      if (cameraUtil && typeof cameraUtil.stop === 'function') {
+        cameraUtil.stop();
       }
-      isPinched = pinched;
-    });
+      cameraUtil = null;
+      if (mediaPipeRafId) {
+        cancelAnimationFrame(mediaPipeRafId);
+        mediaPipeRafId = 0;
+      }
+      if (mediaStream) {
+        mediaStream.getTracks().forEach((track) => track.stop());
+      }
+      mediaStream = null;
+      videoElement.srcObject = null;
+    }
+
+    async function startGestureCamera() {
+      const cameraWidth = isMobileDevice ? MOBILE_CAMERA_WIDTH : CAMERA_WIDTH;
+      const cameraHeight = isMobileDevice ? MOBILE_CAMERA_HEIGHT : CAMERA_HEIGHT;
+
+      if (cameraUtilsReady) {
+        try {
+          cameraUtil = new Camera(videoElement, {
+            onFrame: async () => {
+              await hands.send({ image: videoElement });
+            },
+            width: cameraWidth,
+            height: cameraHeight,
+            facingMode: 'user'
+          });
+          await cameraUtil.start();
+          return;
+        } catch (error) {
+          console.warn('CameraUtils 启动失败，尝试 getUserMedia 回退:', error);
+          cameraUtil = null;
+        }
+      }
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('当前浏览器不支持 getUserMedia');
+      }
+
+      const constraints = {
+        audio: false,
+        video: {
+          facingMode: { ideal: 'user' },
+          width: { ideal: cameraWidth },
+          height: { ideal: cameraHeight }
+        }
+      };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      await startMediaPipeLoopWithStream(stream);
+    }
 
     gestureBtn.addEventListener('click', async () => {
+      if (!handSdkReady || !hands) {
+        toast('手势资源加载失败，请检查网络后刷新');
+        return;
+      }
       if (handEnabled) return;
+      if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+        toast('移动端摄像头需 HTTPS 或 localhost 环境');
+        return;
+      }
       handEnabled = true;
       gestureBtn.textContent = '手势识别已开启';
       gestureBtn.disabled = true;
       try {
-        cameraUtil = new Camera(videoElement, {
-          onFrame: async () => {
-            await hands.send({ image: videoElement });
-          },
-          width: 640,
-          height: 480
-        });
-        await cameraUtil.start();
-        toast('手势已连接，捏合即可抽卡');
+        await startGestureCamera();
+        gestureHintEl.textContent = '手势提示：捏合抽卡，横向挥手切卡，保持开掌可连抽';
+        toast(`手势已连接：${isMobileDevice ? '移动端摄像头已启用' : '捏合抽卡，左右挥手切卡'}`);
       } catch (err) {
+        stopCameraFeed();
         gestureBtn.disabled = false;
         gestureBtn.textContent = '唤醒手势抽卡';
         handEnabled = false;
-        throw err;
+        toast(`手势启动失败：${err && err.message ? err.message : '请检查摄像头权限'}`);
       }
     });
 
-    document.getElementById('fullscreenBtn').addEventListener('click', async () => {
-      if (!document.fullscreenElement) {
-        await document.documentElement.requestFullscreen();
-      } else {
-        await document.exitFullscreen();
+    prevCardBtn.addEventListener('click', () => shiftFocus(-1, '按钮'));
+    nextCardBtn.addEventListener('click', () => shiftFocus(1, '按钮'));
+    hudPrevBtn.addEventListener('click', () => shiftFocus(-1, 'HUD'));
+    hudNextBtn.addEventListener('click', () => shiftFocus(1, 'HUD'));
+    multiDrawBtn.addEventListener('click', () => drawBurst(BURST_COUNT, '按钮连抽'));
+
+    let pointerDown = false;
+    let pointerStartX = 0;
+    let pointerStartY = 0;
+
+    canvas.addEventListener('pointerdown', (event) => {
+      pointerDown = true;
+      pointerStartX = event.clientX;
+      pointerStartY = event.clientY;
+      if (!handEnabled) {
+        updateCursor(event.clientX / window.innerWidth, event.clientY / window.innerHeight, false);
       }
+    });
+
+    window.addEventListener('pointermove', (event) => {
+      if (!handEnabled) {
+        updateCursor(event.clientX / window.innerWidth, event.clientY / window.innerHeight, false);
+      }
+    });
+
+    window.addEventListener('pointerup', (event) => {
+      if (!pointerDown) return;
+      pointerDown = false;
+      const deltaX = event.clientX - pointerStartX;
+      const deltaY = event.clientY - pointerStartY;
+      if (Math.abs(deltaX) > POINTER_SWIPE_THRESHOLD_PX && Math.abs(deltaX) > Math.abs(deltaY)) {
+        shiftFocus(deltaX > 0 ? -1 : 1, '拖拽');
+      } else {
+        drawCard('点击');
+      }
+    });
+
+    canvas.addEventListener('wheel', (event) => {
+      if (Math.abs(event.deltaY) < 4) return;
+      shiftFocus(event.deltaY > 0 ? 1 : -1, '滚轮');
+    }, { passive: true });
+
+    window.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowLeft') {
+        shiftFocus(-1, '键盘');
+      } else if (event.key === 'ArrowRight') {
+        shiftFocus(1, '键盘');
+      } else if (event.key === ' ' || event.key.toLowerCase() === 'd') {
+        drawCard('键盘');
+      } else if (event.key.toLowerCase() === 'b') {
+        drawBurst(BURST_COUNT, '键盘连抽');
+      }
+    });
+
+    fullscreenBtn.addEventListener('click', async () => {
+      try {
+        if (!document.fullscreenEnabled) {
+          toast('当前浏览器不支持全屏 API');
+          return;
+        }
+        if (!document.fullscreenElement) {
+          await document.documentElement.requestFullscreen();
+        } else {
+          await document.exitFullscreen();
+        }
+      } catch (err) {
+        toast(`全屏切换失败：${err && err.message ? err.message : '未知错误'}`);
+      }
+    });
+
+    window.addEventListener('beforeunload', () => {
+      clearInterval(timer);
+      stopCameraFeed();
+      archiveCards.forEach((entry) => {
+        entry.geo.dispose();
+        entry.mat.dispose();
+        entry.tex.dispose();
+      });
     });
 
     function animate() {
@@ -506,7 +980,11 @@
       starField.rotation.y += 0.00035;
       starField.rotation.x += 0.00008;
       point.position.x = Math.sin(performance.now() * 0.0006) * 12;
-      composer.render();
+      if (composer) {
+        composer.render();
+      } else {
+        renderer.render(scene, camera);
+      }
     }
     animate();
 
@@ -514,9 +992,17 @@
       renderer.setSize(window.innerWidth, window.innerHeight);
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
-      composer.setSize(window.innerWidth, window.innerHeight);
-      bloomPass.setSize(window.innerWidth, window.innerHeight);
+      if (composer) {
+        composer.setSize(window.innerWidth, window.innerHeight);
+      }
+      if (bloomPass) {
+        bloomPass.setSize(window.innerWidth, window.innerHeight);
+      }
+      layoutArchiveCards(false);
     });
+
+    updateArchiveLabel();
+    })();
   </script>
 </body>
 </html>
