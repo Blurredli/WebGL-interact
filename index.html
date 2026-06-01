@@ -288,6 +288,7 @@
     const PROGRESS_UPDATE_INTERVAL_MS = 220;
     const INTRO_AUTO_HIDE_MS = 3400;
     const TOAST_DISPLAY_MS = 1600;
+    const FALLBACK_LOADING_HIDE_DELAY_MS = 260;
 
     const loadingEl = document.getElementById('loading');
     const introEl = document.getElementById('intro');
@@ -302,7 +303,7 @@
       progressText.textContent = message;
       setTimeout(() => {
         loadingEl.classList.add('hidden');
-      }, 260);
+      }, FALLBACK_LOADING_HIDE_DELAY_MS);
       introEl.classList.add('hidden');
       gestureBtn.disabled = true;
       gestureBtn.textContent = '手势不可用';
@@ -310,7 +311,7 @@
     }
 
     if (typeof window.THREE === 'undefined' || typeof window.gsap === 'undefined') {
-      enterFallbackMode('资源加载失败，已进入基础模式（请检查网络后刷新）');
+      enterFallbackMode('关键资源(Three.js/GSAP)加载失败，已进入基础模式（请检查网络后刷新）');
       return;
     }
 
@@ -532,11 +533,11 @@
         isPinched = pinched;
       });
     } else {
-      gestureBtn.textContent = '手势资源未加载';
+      gestureBtn.textContent = '手势资源加载失败';
     }
 
     gestureBtn.addEventListener('click', async () => {
-      if (!hands || typeof window.Camera === 'undefined') {
+      if (!handSdkReady || !hands) {
         toast('手势资源加载失败，请检查网络后刷新');
         return;
       }
