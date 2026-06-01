@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>宇宙级3D卡牌抽取</title>
+  <script>
+    (function () {
+      function ensureBox() {
+        var box = document.getElementById('error-box');
+        if (!box) {
+          box = document.createElement('div');
+          box.id = 'error-box';
+          box.style.cssText = 'position:fixed;left:12px;right:12px;bottom:12px;z-index:99999;display:flex;flex-direction:column;gap:6px;pointer-events:none;';
+          document.addEventListener('DOMContentLoaded', function () { document.body.appendChild(box); });
+        }
+        return box;
+      }
+      function showError(msg) {
+        var item = document.createElement('div');
+        item.textContent = '[错误] ' + msg;
+        item.style.cssText = 'padding:10px 12px;border-radius:10px;background:linear-gradient(90deg,#ff3b30,#ff9500);color:#fff;font-size:12px;font-family:monospace;box-shadow:0 8px 18px rgba(255,87,34,.35);';
+        var box = ensureBox();
+        box.appendChild(item);
+        setTimeout(function () { item.remove(); }, 8000);
+      }
+      window.addEventListener('error', function (e) { showError(e.message || '未知脚本错误'); });
+      window.addEventListener('unhandledrejection', function (e) {
+        var msg = e.reason && e.reason.message ? e.reason.message : String(e.reason || 'Promise未处理拒绝');
+        showError(msg);
+      });
+    })();
+  </script>
+  <style>
+    :root {
+      --glass: rgba(255, 255, 255, 0.08);
+      --line: rgba(255, 255, 255, 0.2);
+      --text: #e9ecff;
+      --accent: #73f5ff;
+      --pink: #ff78f3;
+      --cursor: #73f5ff;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: radial-gradient(circle at top, #1f245f 0%, #090b14 50%, #05060a 100%);
+      color: var(--text);
+      font-family: "Inter", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    #app {
+      position: fixed;
+      inset: 0;
+    }
+    #scene { width: 100%; height: 100%; display: block; }
+
+    .glass {
+      background: var(--glass);
+      border: 1px solid var(--line);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-radius: 16px;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+    }
+
+    .header {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      right: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      z-index: 20;
+    }
+    .title {
+      margin: 0;
+      font-size: clamp(18px, 4vw, 32px);
+      line-height: 1;
+      background: linear-gradient(90deg, #88b8ff, #9ffff5, #d196ff);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      text-shadow: 0 0 18px rgba(115, 245, 255, 0.5);
+    }
+
+    .stats {
+      position: fixed;
+      top: 90px;
+      right: 12px;
+      width: min(280px, 72vw);
+      z-index: 20;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+    .small { opacity: 0.8; font-size: 12px; }
+    .btn {
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      border-radius: 10px;
+      color: #fff;
+      background: rgba(255, 255, 255, 0.1);
+      padding: 8px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .btn:hover { background: rgba(255, 255, 255, 0.18); }
+    #history {
+      margin: 0;
+      padding-left: 16px;
+      max-height: 120px;
+      overflow: auto;
+      font-size: 12px;
+    }
+
+    .gesture-btn {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: 20px;
+      z-index: 20;
+      padding: 12px 20px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      background: linear-gradient(90deg, rgba(117, 222, 255, 0.34), rgba(225, 122, 255, 0.28));
+      color: #fff;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      cursor: pointer;
+    }
+
+    #cursor {
+      position: fixed;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 2px solid #fff;
+      background: radial-gradient(circle, #fff 0%, var(--cursor) 55%, transparent 70%);
+      box-shadow: 0 0 20px var(--cursor);
+      pointer-events: none;
+      transform: translate(-50%, -50%) scale(1);
+      z-index: 30;
+      opacity: 0;
+      transition: opacity .2s ease;
+    }
+
+    .toast {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      bottom: 70px;
+      padding: 10px 14px;
+      border-radius: 12px;
+      background: rgba(18, 22, 45, 0.75);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      backdrop-filter: blur(10px);
+      color: #fff;
+      font-size: 13px;
+      z-index: 35;
+      opacity: 0;
+      transition: all .35s ease;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(2, 4, 10, 0.92);
+      color: #fff;
+      flex-direction: column;
+      gap: 14px;
+      text-align: center;
+      padding: 24px;
+    }
+    .progress-wrap {
+      width: min(460px, 84vw);
+      height: 16px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.12);
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    .progress-bar {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, #6ed9ff, #73ffcb, #ca7bff);
+      transition: width .25s ease;
+    }
+    .hidden { display: none !important; }
+    #camera { display: none; }
+
+    @media (max-width: 640px) {
+      .stats { top: 78px; width: calc(100% - 24px); }
+      .row { font-size: 12px; }
+      .gesture-btn { bottom: 14px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <canvas id="scene"></canvas>
+  </div>
+
+  <header class="header glass">
+    <h1 class="title">宇宙级 3D 卡牌抽取</h1>
+  </header>
+
+  <aside class="stats glass">
+    <div class="row">
+      <label for="rainbowMode">彩虹卡开关</label>
+      <input id="rainbowMode" type="checkbox" />
+    </div>
+    <div class="row"><span>卡牌总数</span><strong id="cardTotal">0</strong></div>
+    <div class="row"><span>抽卡记录</span><span class="small">最新5条</span></div>
+    <ol id="history"></ol>
+    <button id="fullscreenBtn" class="btn" type="button">全屏切换</button>
+  </aside>
+
+  <button id="gestureBtn" class="gesture-btn" type="button">唤醒手势抽卡</button>
+  <div id="cursor"></div>
+  <div id="toast" class="toast"></div>
+  <video id="camera" playsinline></video>
+
+  <div id="loading" class="overlay">
+    <h2>宇宙传送门构建中…</h2>
+    <div class="progress-wrap"><div id="progressBar" class="progress-bar"></div></div>
+    <div id="progressText">准备资源 0%</div>
+  </div>
+
+  <div id="intro" class="overlay hidden">
+    <h2>欢迎来到星际卡牌中心</h2>
+    <p>可点击“跳过”立即进入，或等待动画自动结束。</p>
+    <button id="skipIntro" class="btn" type="button">跳过</button>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+
+  <script>
+    const PHOTO_BASE64 = {
+      nebula: '',
+      aurora: '',
+      supernova: ''
+    };
+
+    const canvas = document.getElementById('scene');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1200);
+    camera.position.set(0, 0, 38);
+
+    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+    const point = new THREE.PointLight(0x9dd6ff, 1.4, 250);
+    point.position.set(8, 10, 12);
+    scene.add(ambient, point);
+
+    const starGeo = new THREE.BufferGeometry();
+    const stars = [];
+    for (let i = 0; i < 2600; i += 1) {
+      stars.push((Math.random() - 0.5) * 520, (Math.random() - 0.5) * 520, (Math.random() - 0.5) * 520);
+    }
+    starGeo.setAttribute('position', new THREE.Float32BufferAttribute(stars, 3));
+    const starMat = new THREE.PointsMaterial({ size: 0.9, color: 0xbfd3ff, transparent: true, opacity: 0.8 });
+    const starField = new THREE.Points(starGeo, starMat);
+    scene.add(starField);
+
+    const composer = new THREE.EffectComposer(renderer);
+    const renderPass = new THREE.RenderPass(scene, camera);
+    const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.25, 0.55, 0.2);
+    composer.addPass(renderPass);
+    composer.addPass(bloomPass);
+
+    const cardGroup = new THREE.Group();
+    scene.add(cardGroup);
+
+    function makeCardTexture(label, rainbowMode) {
+      const cvs = document.createElement('canvas');
+      cvs.width = 512;
+      cvs.height = 768;
+      const ctx = cvs.getContext('2d');
+      const grd = ctx.createLinearGradient(0, 0, 512, 768);
+      if (rainbowMode) {
+        grd.addColorStop(0, '#ff6af6');
+        grd.addColorStop(0.5, '#62dbff');
+        grd.addColorStop(1, '#7bffbb');
+      } else {
+        grd.addColorStop(0, '#112247');
+        grd.addColorStop(1, '#24386d');
+      }
+      ctx.fillStyle = grd;
+      ctx.fillRect(0, 0, 512, 768);
+      ctx.strokeStyle = 'rgba(255,255,255,.65)';
+      ctx.lineWidth = 10;
+      ctx.strokeRect(16, 16, 480, 736);
+      ctx.fillStyle = 'rgba(255,255,255,.95)';
+      ctx.font = 'bold 44px sans-serif';
+      ctx.fillText('COSMIC CARD', 90, 124);
+      ctx.font = 'bold 58px sans-serif';
+      ctx.fillText(label, 120, 390);
+      return new THREE.CanvasTexture(cvs);
+    }
+
+    function textureFromBase64(base64, fallbackLabel, rainbowMode) {
+      if (!base64) {
+        return makeCardTexture(fallbackLabel, rainbowMode);
+      }
+      const img = new Image();
+      img.src = base64;
+      const tex = new THREE.Texture(img);
+      img.onload = () => {
+        tex.needsUpdate = true;
+      };
+      return tex;
+    }
+
+    const pool = Object.keys(PHOTO_BASE64);
+    const historyEl = document.getElementById('history');
+    const totalEl = document.getElementById('cardTotal');
+    const toastEl = document.getElementById('toast');
+    const rainbowModeEl = document.getElementById('rainbowMode');
+
+    let total = 0;
+    function toast(msg) {
+      toastEl.textContent = msg;
+      toastEl.classList.add('show');
+      setTimeout(() => toastEl.classList.remove('show'), 1600);
+    }
+
+    function drawCard() {
+      const rainbowMode = rainbowModeEl.checked;
+      const name = pool[Math.floor(Math.random() * pool.length)] || 'mystic';
+      const tex = textureFromBase64(PHOTO_BASE64[name], name.toUpperCase(), rainbowMode);
+      const geo = new THREE.PlaneGeometry(8, 12);
+      const mat = new THREE.MeshStandardMaterial({ map: tex, metalness: 0.15, roughness: 0.45 });
+      const card = new THREE.Mesh(geo, mat);
+      card.position.set((Math.random() - 0.5) * 7, -1, -20);
+      card.rotation.y = -Math.PI;
+      cardGroup.add(card);
+
+      gsap.to(card.position, { z: 1.5, y: 0.4, duration: 0.55, ease: 'power2.out' });
+      gsap.to(card.rotation, { y: 0, duration: 0.9, ease: 'power3.out' });
+      gsap.to(card.scale, {
+        x: 1.05,
+        y: 1.05,
+        z: 1.05,
+        yoyo: true,
+        repeat: 1,
+        duration: 0.3,
+        ease: 'sine.inOut'
+      });
+
+      setTimeout(() => {
+        gsap.to(card.position, {
+          z: -10,
+          y: -4,
+          duration: 1.6,
+          ease: 'power2.in',
+          onComplete: () => {
+            cardGroup.remove(card);
+            geo.dispose();
+            mat.dispose();
+            tex.dispose();
+          }
+        });
+      }, 1500);
+
+      total += 1;
+      totalEl.textContent = String(total);
+      const item = document.createElement('li');
+      item.textContent = `${new Date().toLocaleTimeString()} - ${name}`;
+      historyEl.prepend(item);
+      while (historyEl.children.length > 5) {
+        historyEl.lastElementChild.remove();
+      }
+      toast(`已抽到 ${name} 卡牌！`);
+    }
+
+    const loadingEl = document.getElementById('loading');
+    const introEl = document.getElementById('intro');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    const skipBtn = document.getElementById('skipIntro');
+
+    let progress = 0;
+    const timer = setInterval(() => {
+      progress = Math.min(progress + Math.random() * 18, 92);
+      progressBar.style.width = `${progress.toFixed(0)}%`;
+      progressText.textContent = `准备资源 ${progress.toFixed(0)}%`;
+    }, 220);
+
+    window.addEventListener('load', () => {
+      clearInterval(timer);
+      progress = 100;
+      progressBar.style.width = '100%';
+      progressText.textContent = '准备完成 100%';
+      setTimeout(() => {
+        loadingEl.classList.add('hidden');
+        introEl.classList.remove('hidden');
+        gsap.fromTo('.header, .stats, #gestureBtn', { y: -20, opacity: 0 }, { y: 0, opacity: 1, stagger: 0.08, duration: 0.8 });
+        setTimeout(() => introEl.classList.add('hidden'), 3400);
+      }, 300);
+    });
+
+    skipBtn.addEventListener('click', () => {
+      introEl.classList.add('hidden');
+    });
+
+    const cursor = document.getElementById('cursor');
+    const videoElement = document.getElementById('camera');
+    const gestureBtn = document.getElementById('gestureBtn');
+    let cameraUtil = null;
+    let handEnabled = false;
+    let isPinched = false;
+    let canDraw = true;
+
+    function updateCursor(x, y, pinched) {
+      cursor.style.opacity = '1';
+      cursor.style.left = `${x * window.innerWidth}px`;
+      cursor.style.top = `${y * window.innerHeight}px`;
+      cursor.style.setProperty('--cursor', pinched ? '#ff6b81' : '#73f5ff');
+      cursor.style.transform = `translate(-50%, -50%) scale(${pinched ? 1.6 : 1})`;
+    }
+
+    const hands = new Hands({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.6,
+      minTrackingConfidence: 0.6
+    });
+
+    hands.onResults((results) => {
+      if (!results.multiHandLandmarks || !results.multiHandLandmarks.length) {
+        cursor.style.opacity = handEnabled ? '0.3' : '0';
+        return;
+      }
+      const landmarks = results.multiHandLandmarks[0];
+      const tipIndex = landmarks[8];
+      const tipThumb = landmarks[4];
+      const dx = tipIndex.x - tipThumb.x;
+      const dy = tipIndex.y - tipThumb.y;
+      const pinchDist = Math.sqrt(dx * dx + dy * dy);
+      const pinched = pinchDist < 0.05;
+      updateCursor(tipIndex.x, tipIndex.y, pinched);
+
+      if (pinched && !isPinched && canDraw) {
+        canDraw = false;
+        drawCard();
+        setTimeout(() => { canDraw = true; }, 900);
+      }
+      isPinched = pinched;
+    });
+
+    gestureBtn.addEventListener('click', async () => {
+      if (handEnabled) return;
+      handEnabled = true;
+      gestureBtn.textContent = '手势识别已开启';
+      gestureBtn.disabled = true;
+      try {
+        cameraUtil = new Camera(videoElement, {
+          onFrame: async () => {
+            await hands.send({ image: videoElement });
+          },
+          width: 640,
+          height: 480
+        });
+        await cameraUtil.start();
+        toast('手势已连接，捏合即可抽卡');
+      } catch (err) {
+        gestureBtn.disabled = false;
+        gestureBtn.textContent = '唤醒手势抽卡';
+        handEnabled = false;
+        throw err;
+      }
+    });
+
+    document.getElementById('fullscreenBtn').addEventListener('click', async () => {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    });
+
+    function animate() {
+      requestAnimationFrame(animate);
+      starField.rotation.y += 0.00035;
+      starField.rotation.x += 0.00008;
+      point.position.x = Math.sin(performance.now() * 0.0006) * 12;
+      composer.render();
+    }
+    animate();
+
+    window.addEventListener('resize', () => {
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      composer.setSize(window.innerWidth, window.innerHeight);
+      bloomPass.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
