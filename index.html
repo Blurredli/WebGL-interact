@@ -355,6 +355,11 @@
       <label for="rainbowMode">彩虹卡开关</label>
       <input id="rainbowMode" type="checkbox" />
     </div>
+    <div class="row">
+      <label for="dampingSlider">手势阻尼</label>
+      <input id="dampingSlider" type="range" min="1" max="10" value="5" style="width:100px;accent-color:#73f5ff;" />
+      <span id="dampingValue" style="min-width:28px;text-align:right;">5</span>
+    </div>
     <div class="row"><span>卡牌总数</span><strong id="cardTotal">0</strong></div>
     <div class="row"><span>当前展示</span><strong id="currentCard">--</strong></div>
     <div class="row"><span>抽卡记录</span><span class="small">最新5条</span></div>
@@ -476,8 +481,6 @@
     const HAND_DETECTION_CONFIDENCE = 0.6;
     const HAND_TRACKING_CONFIDENCE = 0.6;
     const PINCH_THRESHOLD = 0.05;
-    const HAND_SWIPE_THRESHOLD = 0.075;
-    const SWIPE_COOLDOWN_MS = 460;
     const POINTER_SWIPE_THRESHOLD_PX = 34;
     const PALM_BURST_HOLD_MS = 900;
     const BURST_COOLDOWN_MS = 4200;
@@ -509,6 +512,8 @@
     const gestureHintEl = document.getElementById('gestureHint');
     const hudPrevBtn = document.getElementById('hudPrevBtn');
     const hudNextBtn = document.getElementById('hudNextBtn');
+    const dampingSliderEl = document.getElementById('dampingSlider');
+    const dampingValueEl = document.getElementById('dampingValue');
 
     function enterFallbackMode(message) {
       progressBar.style.width = '100%';
@@ -768,6 +773,10 @@
 
     if (isMobileDevice) statsPanel.classList.add('collapsed');
     statsToggleBtn.addEventListener('click', () => statsPanel.classList.toggle('collapsed'));
+    dampingSliderEl.addEventListener('input', () => {
+      dampingValueEl.textContent = dampingSliderEl.value;
+      resetFilter();
+    });
 
     // ══════════════════════════════════════════════
     //  🎵 Web Audio 音效系统
@@ -1190,10 +1199,52 @@
     let handEnabled = false;
     let isPinched = false;
     let canDraw = true;
-    let lastSwipeAt = 0;
     let lastTipX = null;
     let palmHoldSince = 0;
     let lastBurstAt = 0;
+
+    // ══════════════════════════════════════════════
+    //  🎯 手势平滑滤波器 (EMA + 速度计算)
+    // ══════════════════════════════════════════════
+    let smoothX = null, smoothY = null, smoothPinch = null;
+    let swipeVelX = 0;           // 滑动速度 (归一化坐标/帧)
+    let swipeAccum = 0;          // 累积滑动距离
+    let swipeAccumTimer = 0;     // 累积重置计时
+    let lastFilterTime = 0;
+    const SWIPE_MULTITHRESHOLD = 0.04;  // 切一张卡的最小累积距离
+    const SWIPE_ACCUM_TIMEOUT = 350;    // 累积超时 (ms)，超过则结算
+    const SWIPE_MAX_CARDS = 8;          // 单次最多切几张
+
+    function getSmoothingAlpha() {
+      // slider 1~10 → alpha: 0.08(高阻尼/很平滑) ~ 0.65(低阻尼/灵敏)
+      const v = parseInt(dampingSliderEl.value, 10);
+      return 0.08 + (v - 1) * 0.063;
+    }
+
+    function getSwipeSensitivity() {
+      // slider 1~10 → 灵敏度: 0.5(迟钝) ~ 2.0(灵敏)
+      const v = parseInt(dampingSliderEl.value, 10);
+      return 0.5 + (v - 1) * 0.167;
+    }
+
+    function applyFilter(rawX, rawY, rawPinch, dt) {
+      const alpha = getSmoothingAlpha();
+      if (smoothX === null) {
+        smoothX = rawX; smoothY = rawY; smoothPinch = rawPinch;
+      } else {
+        smoothX += alpha * (rawX - smoothX);
+        smoothY += alpha * (rawY - smoothY);
+        smoothPinch += alpha * (rawPinch - smoothPinch);
+      }
+      return { x: smoothX, y: smoothY, pinch: smoothPinch };
+    }
+
+    function resetFilter() {
+      smoothX = smoothY = smoothPinch = null;
+      swipeVelX = 0;
+      swipeAccum = 0;
+      lastTipX = null;
+    }
 
     function updateCursor(x, y, pinched) {
       cursor.style.opacity = '1';
@@ -1222,10 +1273,9 @@
       });
 
       hands.onResults((results) => {
-        console.log('[Hands] onResults:', results.multiHandLandmarks ? results.multiHandLandmarks.length + ' hands' : 'no hands');
         if (!results.multiHandLandmarks || !results.multiHandLandmarks.length) {
           cursor.style.opacity = handEnabled ? '0.3' : '0';
-          lastTipX = null;
+          resetFilter();
           palmHoldSince = 0;
           return;
         }
@@ -1234,26 +1284,52 @@
         const tipThumb = landmarks[4];
         const dx = tipIndex.x - tipThumb.x;
         const dy = tipIndex.y - tipThumb.y;
-        const pinchDist = Math.sqrt(dx * dx + dy * dy);
-        const pinched = pinchDist < PINCH_THRESHOLD;
-        updateCursor(tipIndex.x, tipIndex.y, pinched);
+        const rawPinch = Math.sqrt(dx * dx + dy * dy);
 
+        // ── 时间步长 ──
+        const now = performance.now();
+        const dt = lastFilterTime ? Math.min((now - lastFilterTime) / 16.67, 3) : 1;
+        lastFilterTime = now;
+
+        // ── EMA 滤波 ──
+        const filtered = applyFilter(tipIndex.x, tipIndex.y, rawPinch, dt);
+        const pinched = filtered.pinch < PINCH_THRESHOLD;
+        updateCursor(filtered.x, filtered.y, pinched);
+
+        // ── 捏合抽卡 ──
         if (pinched && !isPinched && canDraw) {
           canDraw = false;
           drawCard('捏合');
           setTimeout(() => { canDraw = true; }, DRAW_COOLDOWN_MS);
         }
 
-        const now = performance.now();
-        if (!pinched && lastTipX !== null && archiveCards.length > 1 && now - lastSwipeAt > SWIPE_COOLDOWN_MS) {
-          const swipeDeltaX = tipIndex.x - lastTipX;
-          if (Math.abs(swipeDeltaX) > HAND_SWIPE_THRESHOLD) {
-            lastSwipeAt = now;
-            shiftFocus(swipeDeltaX > 0 ? -1 : 1, '手势滑动');
+        // ── 速度滑动：累积距离，按速度切换多张 ──
+        if (!pinched && lastTipX !== null && archiveCards.length > 1) {
+          const sensitivity = getSwipeSensitivity();
+          const rawDelta = (filtered.x - lastTipX) * sensitivity;
+          swipeVelX = swipeVelX * 0.5 + rawDelta * 0.5; // 速度也做低通滤波
+          swipeAccum += swipeVelX;
+
+          // 超时结算
+          if (now - swipeAccumTimer > SWIPE_ACCUM_TIMEOUT && Math.abs(swipeAccum) > SWIPE_MULTITHRESHOLD * 0.5) {
+            const direction = swipeAccum > 0 ? -1 : 1; // 手向右 → 卡向左
+            const cardsToSwitch = Math.min(
+              Math.max(1, Math.floor(Math.abs(swipeAccum) / SWIPE_MULTITHRESHOLD)),
+              SWIPE_MAX_CARDS
+            );
+            for (let i = 0; i < cardsToSwitch; i++) {
+              setTimeout(() => shiftFocus(direction, '手势滑动'), i * 60);
+            }
+            swipeAccum = 0;
+            swipeAccumTimer = now;
+          }
+          // 实时累积超时重置
+          if (Math.abs(swipeAccum) < SWIPE_MULTITHRESHOLD * 0.3) {
+            swipeAccumTimer = now;
           }
         }
 
-        if (isOpenPalm(landmarks, pinchDist)) {
+        if (isOpenPalm(landmarks, filtered.pinch)) {
           if (!palmHoldSince) {
             palmHoldSince = now;
           } else if (now - palmHoldSince > PALM_BURST_HOLD_MS && now - lastBurstAt > BURST_COOLDOWN_MS) {
@@ -1266,7 +1342,7 @@
           palmHoldSince = 0;
         }
 
-        lastTipX = tipIndex.x;
+        lastTipX = filtered.x;
         isPinched = pinched;
       });
     } else {
@@ -1292,6 +1368,7 @@
     }
 
     function stopCameraFeed() {
+      resetFilter();
       if (cameraUtil && typeof cameraUtil.stop === 'function') {
         cameraUtil.stop();
       }
@@ -1356,6 +1433,7 @@
         return;
       }
       handEnabled = true;
+      resetFilter();
       gestureBtn.textContent = '手势识别已开启';
       gestureBtn.disabled = true;
       try {
