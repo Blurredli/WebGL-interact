@@ -253,14 +253,19 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/Pass.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
 
   <script>
+    (function () {
     // 预留可替换卡图数据，保持 key 作为卡池标识
     const PHOTO_BASE64 = {
       nebula: '',
@@ -283,6 +288,32 @@
     const PROGRESS_UPDATE_INTERVAL_MS = 220;
     const INTRO_AUTO_HIDE_MS = 3400;
     const TOAST_DISPLAY_MS = 1600;
+    const FALLBACK_LOADING_HIDE_DELAY_MS = 260;
+
+    const loadingEl = document.getElementById('loading');
+    const introEl = document.getElementById('intro');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    const skipBtn = document.getElementById('skipIntro');
+    const gestureBtn = document.getElementById('gestureBtn');
+    const fullscreenBtn = document.getElementById('fullscreenBtn');
+
+    function enterFallbackMode(message) {
+      progressBar.style.width = '100%';
+      progressText.textContent = message;
+      setTimeout(() => {
+        loadingEl.classList.add('hidden');
+      }, FALLBACK_LOADING_HIDE_DELAY_MS);
+      introEl.classList.add('hidden');
+      gestureBtn.disabled = true;
+      gestureBtn.textContent = '手势不可用';
+      fullscreenBtn.disabled = true;
+    }
+
+    if (typeof window.THREE === 'undefined' || typeof window.gsap === 'undefined') {
+      enterFallbackMode('关键资源(Three.js/GSAP)加载失败，已进入基础模式（请检查网络后刷新）');
+      return;
+    }
 
     const canvas = document.getElementById('scene');
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -309,11 +340,19 @@
     const starField = new THREE.Points(starGeo, starMat);
     scene.add(starField);
 
-    const composer = new THREE.EffectComposer(renderer);
-    const renderPass = new THREE.RenderPass(scene, camera);
-    const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.25, 0.55, 0.2);
-    composer.addPass(renderPass);
-    composer.addPass(bloomPass);
+    let composer = null;
+    let bloomPass = null;
+    try {
+      composer = new THREE.EffectComposer(renderer);
+      const renderPass = new THREE.RenderPass(scene, camera);
+      bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.25, 0.55, 0.2);
+      composer.addPass(renderPass);
+      composer.addPass(bloomPass);
+    } catch (error) {
+      console.warn('后处理初始化失败，已降级为基础渲染：', error);
+      composer = null;
+      bloomPass = null;
+    }
 
     const cardGroup = new THREE.Group();
     scene.add(cardGroup);
@@ -420,12 +459,6 @@
       toast(`已抽到 ${name} 卡牌！`);
     }
 
-    const loadingEl = document.getElementById('loading');
-    const introEl = document.getElementById('intro');
-    const progressBar = document.getElementById('progressBar');
-    const progressText = document.getElementById('progressText');
-    const skipBtn = document.getElementById('skipIntro');
-
     let progress = 0;
     const timer = setInterval(() => {
       progress = Math.min(progress + Math.random() * PROGRESS_STEP_MAX, PROGRESS_SOFT_CAP);
@@ -452,7 +485,6 @@
 
     const cursor = document.getElementById('cursor');
     const videoElement = document.getElementById('camera');
-    const gestureBtn = document.getElementById('gestureBtn');
     let cameraUtil = null;
     let handEnabled = false;
     let isPinched = false;
@@ -466,39 +498,49 @@
       cursor.style.transform = `translate(-50%, -50%) scale(${pinched ? 1.6 : 1})`;
     }
 
-    const hands = new Hands({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-    });
-    hands.setOptions({
-      maxNumHands: 1,
-      modelComplexity: 1,
-      minDetectionConfidence: HAND_DETECTION_CONFIDENCE,
-      minTrackingConfidence: HAND_TRACKING_CONFIDENCE
-    });
+    const handSdkReady = typeof window.Hands !== 'undefined' && typeof window.Camera !== 'undefined';
+    let hands = null;
+    if (handSdkReady) {
+      hands = new Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+      });
+      hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,
+        minDetectionConfidence: HAND_DETECTION_CONFIDENCE,
+        minTrackingConfidence: HAND_TRACKING_CONFIDENCE
+      });
 
-    hands.onResults((results) => {
-      if (!results.multiHandLandmarks || !results.multiHandLandmarks.length) {
-        cursor.style.opacity = handEnabled ? '0.3' : '0';
-        return;
-      }
-      const landmarks = results.multiHandLandmarks[0];
-      const tipIndex = landmarks[8];
-      const tipThumb = landmarks[4];
-      const dx = tipIndex.x - tipThumb.x;
-      const dy = tipIndex.y - tipThumb.y;
-      const pinchDist = Math.sqrt(dx * dx + dy * dy);
-      const pinched = pinchDist < PINCH_THRESHOLD;
-      updateCursor(tipIndex.x, tipIndex.y, pinched);
+      hands.onResults((results) => {
+        if (!results.multiHandLandmarks || !results.multiHandLandmarks.length) {
+          cursor.style.opacity = handEnabled ? '0.3' : '0';
+          return;
+        }
+        const landmarks = results.multiHandLandmarks[0];
+        const tipIndex = landmarks[8];
+        const tipThumb = landmarks[4];
+        const dx = tipIndex.x - tipThumb.x;
+        const dy = tipIndex.y - tipThumb.y;
+        const pinchDist = Math.sqrt(dx * dx + dy * dy);
+        const pinched = pinchDist < PINCH_THRESHOLD;
+        updateCursor(tipIndex.x, tipIndex.y, pinched);
 
-      if (pinched && !isPinched && canDraw) {
-        canDraw = false;
-        drawCard();
-        setTimeout(() => { canDraw = true; }, DRAW_COOLDOWN_MS);
-      }
-      isPinched = pinched;
-    });
+        if (pinched && !isPinched && canDraw) {
+          canDraw = false;
+          drawCard();
+          setTimeout(() => { canDraw = true; }, DRAW_COOLDOWN_MS);
+        }
+        isPinched = pinched;
+      });
+    } else {
+      gestureBtn.textContent = '手势资源加载失败';
+    }
 
     gestureBtn.addEventListener('click', async () => {
+      if (!handSdkReady || !hands) {
+        toast('手势资源加载失败，请检查网络后刷新');
+        return;
+      }
       if (handEnabled) return;
       handEnabled = true;
       gestureBtn.textContent = '手势识别已开启';
@@ -521,7 +563,7 @@
       }
     });
 
-    document.getElementById('fullscreenBtn').addEventListener('click', async () => {
+    fullscreenBtn.addEventListener('click', async () => {
       try {
         if (!document.fullscreenEnabled) {
           toast('当前浏览器不支持全屏 API');
@@ -549,7 +591,11 @@
       starField.rotation.y += 0.00035;
       starField.rotation.x += 0.00008;
       point.position.x = Math.sin(performance.now() * 0.0006) * 12;
-      composer.render();
+      if (composer) {
+        composer.render();
+      } else {
+        renderer.render(scene, camera);
+      }
     }
     animate();
 
@@ -557,9 +603,14 @@
       renderer.setSize(window.innerWidth, window.innerHeight);
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
-      composer.setSize(window.innerWidth, window.innerHeight);
-      bloomPass.setSize(window.innerWidth, window.innerHeight);
+      if (composer) {
+        composer.setSize(window.innerWidth, window.innerHeight);
+      }
+      if (bloomPass) {
+        bloomPass.setSize(window.innerWidth, window.innerHeight);
+      }
     });
+    })();
   </script>
 </body>
 </html>
