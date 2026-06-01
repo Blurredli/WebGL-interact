@@ -101,6 +101,26 @@
       text-shadow: 0 0 18px rgba(115, 245, 255, 0.5);
     }
 
+    .stats-toggle {
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 10px;
+      color: #fff;
+      background: rgba(255,255,255,0.1);
+      padding: 6px 12px;
+      font-size: 18px;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background .2s;
+      align-self: flex-end;
+    }
+    .stats-toggle:hover { background: rgba(255,255,255,0.2); }
+    .stats.collapsed {
+      padding: 6px;
+      width: auto;
+      min-width: 42px;
+    }
+    .stats.collapsed .stats-body { display: none; }
+
     .stats {
       position: fixed;
       top: 90px;
@@ -247,6 +267,30 @@
     }
     .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+    .combo-display {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%) scale(0);
+      z-index: 25;
+      font-family: "Orbitron", sans-serif;
+      font-size: clamp(40px, 8vw, 80px);
+      font-weight: 700;
+      pointer-events: none;
+      opacity: 0;
+      text-shadow: 0 0 30px currentColor, 0 0 60px currentColor;
+      white-space: nowrap;
+    }
+
+    .screen-flash {
+      position: fixed;
+      inset: 0;
+      z-index: 38;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.08s ease-out;
+    }
+
     .overlay {
       position: fixed;
       inset: 0;
@@ -281,6 +325,7 @@
 
     @media (max-width: 640px) {
       .stats { top: 78px; width: calc(100% - 24px); }
+      .stats.collapsed { width: auto; }
       .row { font-size: 12px; }
       .deck-hud {
         bottom: 72px;
@@ -303,7 +348,9 @@
     <h1 class="title">宇宙级 3D 卡牌抽取</h1>
   </header>
 
-  <aside class="stats glass">
+  <aside class="stats glass" id="statsPanel">
+    <button id="statsToggle" class="stats-toggle" type="button" title="展开/收起面板">☰</button>
+    <div class="stats-body">
     <div class="row">
       <label for="rainbowMode">彩虹卡开关</label>
       <input id="rainbowMode" type="checkbox" />
@@ -318,6 +365,7 @@
       <button id="multiDrawBtn" class="btn" type="button">连抽3张</button>
     </div>
     <button id="fullscreenBtn" class="btn" type="button">全屏切换</button>
+    </div>
   </aside>
 
   <div id="deckHud" class="deck-hud glass">
@@ -333,6 +381,8 @@
 
   <button id="gestureBtn" class="gesture-btn" type="button">唤醒手势抽卡</button>
   <div id="cursor"></div>
+  <div id="comboDisplay" class="combo-display"></div>
+  <div id="screenFlash" class="screen-flash"></div>
   <div id="toast" class="toast"></div>
   <video id="camera" playsinline muted autoplay></video>
 
@@ -362,12 +412,60 @@
 
   <script>
     (function () {
-    // 预留可替换卡图数据，保持 key 作为卡池标识
-    const PHOTO_BASE64 = {
-      nebula: '',
-      aurora: '',
-      supernova: ''
+    // ── 稀有度体系 ──
+    const RARITY = {
+      common:   { label: '普通', stars: 1, weight: 40, border: '#8a9bb0', glow: '#5a6a7a', bg1: '#0d1b2a', bg2: '#1b2d4a' },
+      rare:     { label: '稀有', stars: 2, weight: 30, border: '#4a9eff', glow: '#2060cc', bg1: '#0a1e3d', bg2: '#163a6a' },
+      epic:     { label: '史诗', stars: 3, weight: 18, border: '#b44aff', glow: '#7b20cc', bg1: '#1a0a3d', bg2: '#2e1660' },
+      legendary:{ label: '传说', stars: 4, weight: 9,  border: '#ffc832', glow: '#cc8800', bg1: '#2a1a00', bg2: '#4a3200' },
+      mythic:   { label: '神话', stars: 5, weight: 3,  border: '#ff3355', glow: '#cc0022', bg1: '#2a0010', bg2: '#550020' },
     };
+    const RARITY_KEYS = Object.keys(RARITY);
+    const TOTAL_WEIGHT = RARITY_KEYS.reduce((s, k) => s + RARITY[k].weight, 0);
+
+    const CARD_POOL = [
+      // ── 普通 1★ ──
+      { name: '星尘',     rarity: 'common' },
+      { name: '流星',     rarity: 'common' },
+      { name: '彗尾',     rarity: 'common' },
+      { name: '小行星',   rarity: 'common' },
+      { name: '光斑',     rarity: 'common' },
+      { name: '微光',     rarity: 'common' },
+      // ── 稀有 2★ ──
+      { name: '星云',     rarity: 'rare' },
+      { name: '极光',     rarity: 'rare' },
+      { name: '日珥',     rarity: 'rare' },
+      { name: '星团',     rarity: 'rare' },
+      { name: '暗物质',   rarity: 'rare' },
+      // ── 史诗 3★ ──
+      { name: '超新星',   rarity: 'epic' },
+      { name: '黑洞边缘', rarity: 'epic' },
+      { name: '脉冲星',   rarity: 'epic' },
+      { name: '虫洞',     rarity: 'epic' },
+      // ── 传说 4★ ──
+      { name: '银河核心', rarity: 'legendary' },
+      { name: '时间裂缝', rarity: 'legendary' },
+      { name: '维度之门', rarity: 'legendary' },
+      // ── 神话 5★ ──
+      { name: '创世之光', rarity: 'mythic' },
+      { name: '永恒奇点', rarity: 'mythic' },
+    ];
+
+    function rollRarity() {
+      let r = Math.random() * TOTAL_WEIGHT;
+      for (const key of RARITY_KEYS) {
+        r -= RARITY[key].weight;
+        if (r <= 0) return key;
+      }
+      return 'common';
+    }
+
+    function drawRandomCard() {
+      const rarityKey = rollRarity();
+      const candidates = CARD_POOL.filter(c => c.rarity === rarityKey);
+      return candidates[Math.floor(Math.random() * candidates.length)] || CARD_POOL[0];
+    }
+
     const RENDER_PIXEL_RATIO_CAP = 2;
     const STAR_COUNT = window.innerWidth < 768 ? 1800 : 2600;
     const CARD_DISPLAY_MS = 1500;
@@ -477,36 +575,178 @@
     const cardGroup = new THREE.Group();
     scene.add(cardGroup);
 
-    function makeCardTexture(label, rainbowMode) {
+    function makeCardTexture(label, rarityKey, rainbowMode) {
+      const r = RARITY[rarityKey] || RARITY.common;
       const cvs = document.createElement('canvas');
       cvs.width = 512;
       cvs.height = 768;
       const ctx = cvs.getContext('2d');
-      const grd = ctx.createLinearGradient(0, 0, 512, 768);
+
+      // ── 背景渐变 ──
       if (rainbowMode) {
-        grd.addColorStop(0, '#ff6af6');
-        grd.addColorStop(0.5, '#62dbff');
-        grd.addColorStop(1, '#7bffbb');
+        const grd = ctx.createLinearGradient(0, 0, 512, 768);
+        grd.addColorStop(0, '#4a1238');
+        grd.addColorStop(0.33, '#1a2e55');
+        grd.addColorStop(0.66, '#123a4a');
+        grd.addColorStop(1, '#1a3a2e');
+        ctx.fillStyle = grd;
       } else {
-        grd.addColorStop(0, '#112247');
-        grd.addColorStop(1, '#24386d');
+        const grd = ctx.createLinearGradient(0, 0, 0, 768);
+        grd.addColorStop(0, r.bg1);
+        grd.addColorStop(1, r.bg2);
+        ctx.fillStyle = grd;
       }
-      ctx.fillStyle = grd;
       ctx.fillRect(0, 0, 512, 768);
-      ctx.strokeStyle = 'rgba(255,255,255,.65)';
-      ctx.lineWidth = 10;
-      ctx.strokeRect(16, 16, 480, 736);
-      ctx.fillStyle = 'rgba(255,255,255,.95)';
-      ctx.font = 'bold 44px sans-serif';
-      ctx.fillText('COSMIC CARD', 90, 124);
-      ctx.font = 'bold 58px sans-serif';
-      ctx.fillText(label, 120, 390);
+
+      // ── 星空装饰粒子 ──
+      ctx.save();
+      for (let i = 0; i < 60; i++) {
+        const sx = Math.random() * 512;
+        const sy = Math.random() * 768;
+        const sr = Math.random() * 1.6 + 0.3;
+        ctx.beginPath();
+        ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.4 + 0.1})`;
+        ctx.fill();
+      }
+      ctx.restore();
+
+      // ── 彩虹模式额外装饰 ──
+      if (rainbowMode) {
+        ctx.save();
+        ctx.globalAlpha = 0.25;
+        // 顶部粉色光带
+        const g1 = ctx.createLinearGradient(0, 0, 512, 0);
+        g1.addColorStop(0, '#ff6af6'); g1.addColorStop(1, 'transparent');
+        ctx.fillStyle = g1;
+        ctx.fillRect(0, 0, 512, 200);
+        // 中部蓝色光带
+        const g2 = ctx.createLinearGradient(0, 250, 512, 500);
+        g2.addColorStop(0, 'transparent'); g2.addColorStop(0.5, '#62dbff'); g2.addColorStop(1, 'transparent');
+        ctx.fillStyle = g2;
+        ctx.fillRect(0, 250, 512, 250);
+        // 底部绿色光带
+        const g3 = ctx.createLinearGradient(0, 600, 512, 768);
+        g3.addColorStop(0, 'transparent'); g3.addColorStop(1, '#7bffbb');
+        ctx.fillStyle = g3;
+        ctx.fillRect(0, 560, 512, 208);
+        ctx.globalAlpha = 1;
+        ctx.restore();
+      }
+
+      // ── 稀有度外框 ──
+      const bw = 6;
+      ctx.strokeStyle = r.border;
+      ctx.lineWidth = bw;
+      ctx.strokeRect(bw / 2, bw / 2, 512 - bw, 768 - bw);
+
+      // ── 内框装饰线 ──
+      ctx.strokeStyle = r.border + '44';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(22, 22, 468, 724);
+
+      // ── 四角装饰 ──
+      const cornerSize = 28;
+      ctx.strokeStyle = r.border;
+      ctx.lineWidth = 2;
+      [[28,28,1,1],[484,28,-1,1],[28,740,1,-1],[484,740,-1,-1]].forEach(([cx,cy,dx,dy]) => {
+        ctx.beginPath();
+        ctx.moveTo(cx, cy + dy * cornerSize);
+        ctx.lineTo(cx, cy);
+        ctx.lineTo(cx + dx * cornerSize, cy);
+        ctx.stroke();
+      });
+
+      // ── 顶部稀有度标签 ──
+      ctx.fillStyle = r.border;
+      ctx.font = 'bold 22px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(r.label, 36, 68);
+
+      // ── 星星 ──
+      const starY = 108;
+      const starSpacing = 28;
+      const starStartX = 36;
+      const filledStar = '★';
+      const emptyStar = '☆';
+      ctx.font = '24px sans-serif';
+      for (let i = 0; i < 5; i++) {
+        ctx.fillStyle = i < r.stars ? r.border : 'rgba(255,255,255,0.2)';
+        ctx.fillText(i < r.stars ? filledStar : emptyStar, starStartX + i * starSpacing, starY);
+      }
+
+      // ── 横向分割线 ──
+      ctx.strokeStyle = r.border + '55';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(36, 130);
+      ctx.lineTo(476, 130);
+      ctx.stroke();
+
+      // ── 中央图标区域 (几何图形装饰) ──
+      ctx.save();
+      ctx.globalAlpha = 0.12;
+      const iconR = 100;
+      ctx.strokeStyle = r.border;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(256, 340, iconR, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(256, 340, iconR * 0.6, 0, Math.PI * 2);
+      ctx.stroke();
+      // 六芒星
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
+        ctx.beginPath();
+        ctx.moveTo(256, 340);
+        ctx.lineTo(256 + Math.cos(a) * iconR, 340 + Math.sin(a) * iconR);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // ── 神话级额外光环 ──
+      if (rarityKey === 'mythic') {
+        ctx.save();
+        const pulseGrad = ctx.createRadialGradient(256, 340, 20, 256, 340, 180);
+        pulseGrad.addColorStop(0, r.glow + '30');
+        pulseGrad.addColorStop(0.5, r.glow + '10');
+        pulseGrad.addColorStop(1, 'transparent');
+        ctx.fillStyle = pulseGrad;
+        ctx.fillRect(0, 180, 512, 320);
+        ctx.restore();
+      }
+
+      // ── 卡名 ──
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 52px sans-serif';
+      ctx.shadowColor = r.glow;
+      ctx.shadowBlur = rarityKey === 'mythic' ? 20 : rarityKey === 'legendary' ? 14 : 8;
+      ctx.fillText(label, 256, 400);
+      ctx.shadowBlur = 0;
+
+      // ── 底部分割线 ──
+      ctx.strokeStyle = r.border + '55';
+      ctx.beginPath();
+      ctx.moveTo(36, 640);
+      ctx.lineTo(476, 640);
+      ctx.stroke();
+
+      // ── 底部信息 ──
+      ctx.fillStyle = r.border + 'cc';
+      ctx.font = '18px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(`NO.${String(Math.floor(Math.random() * 9999)).padStart(4, '0')}`, 36, 680);
+      ctx.textAlign = 'right';
+      ctx.fillText('COSMIC CARD', 476, 680);
+
       return new THREE.CanvasTexture(cvs);
     }
 
-    function textureFromBase64(base64, fallbackLabel, rainbowMode) {
+    function textureFromBase64(base64, fallbackLabel, rarityKey, rainbowMode) {
       if (!base64) {
-        return makeCardTexture(fallbackLabel, rainbowMode);
+        return makeCardTexture(fallbackLabel, rarityKey, rainbowMode);
       }
       const img = new Image();
       const tex = new THREE.Texture(img);
@@ -517,13 +757,214 @@
       return tex;
     }
 
-    const pool = Object.keys(PHOTO_BASE64);
     const historyEl = document.getElementById('history');
     const totalEl = document.getElementById('cardTotal');
     const toastEl = document.getElementById('toast');
     const rainbowModeEl = document.getElementById('rainbowMode');
+    const statsPanel = document.getElementById('statsPanel');
+    const statsToggleBtn = document.getElementById('statsToggle');
     const archiveCards = [];
     let focusIndex = -1;
+
+    if (isMobileDevice) statsPanel.classList.add('collapsed');
+    statsToggleBtn.addEventListener('click', () => statsPanel.classList.toggle('collapsed'));
+
+    // ══════════════════════════════════════════════
+    //  🎵 Web Audio 音效系统
+    // ══════════════════════════════════════════════
+    let audioCtx = null;
+    function getAudioCtx() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return audioCtx;
+    }
+
+    function playDrawSound(rarityKey) {
+      try {
+        const ctx = getAudioCtx();
+        const now = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        // 稀有度越高，音调越高越华丽
+        const freqMap = { common: 220, rare: 330, epic: 440, legendary: 554, mythic: 660 };
+        const baseFreq = freqMap[rarityKey] || 220;
+
+        osc.type = rarityKey === 'mythic' ? 'sine' : rarityKey === 'legendary' ? 'triangle' : 'sine';
+        osc.frequency.setValueAtTime(baseFreq, now);
+        osc.frequency.exponentialRampToValueAtTime(baseFreq * (rarityKey === 'mythic' ? 2.5 : 1.5), now + 0.15);
+
+        gain.gain.setValueAtTime(0.12, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+
+        osc.start(now);
+        osc.stop(now + 0.35);
+
+        // 传说/神话加和弦
+        if (rarityKey === 'legendary' || rarityKey === 'mythic') {
+          const osc2 = ctx.createOscillator();
+          const gain2 = ctx.createGain();
+          osc2.connect(gain2);
+          gain2.connect(ctx.destination);
+          osc2.type = 'sine';
+          osc2.frequency.setValueAtTime(baseFreq * 1.25, now);
+          osc2.frequency.exponentialRampToValueAtTime(baseFreq * 2, now + 0.2);
+          gain2.gain.setValueAtTime(0.08, now);
+          gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+          osc2.start(now);
+          osc2.stop(now + 0.45);
+        }
+
+        // 神话加第三音
+        if (rarityKey === 'mythic') {
+          const osc3 = ctx.createOscillator();
+          const gain3 = ctx.createGain();
+          osc3.connect(gain3);
+          gain3.connect(ctx.destination);
+          osc3.type = 'sine';
+          osc3.frequency.setValueAtTime(baseFreq * 1.5, now + 0.05);
+          osc3.frequency.exponentialRampToValueAtTime(baseFreq * 3, now + 0.25);
+          gain3.gain.setValueAtTime(0.06, now + 0.05);
+          gain3.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+          osc3.start(now + 0.05);
+          osc3.stop(now + 0.55);
+        }
+      } catch (e) { /* 静默失败 */ }
+    }
+
+    function playComboSound(comboCount) {
+      try {
+        const ctx = getAudioCtx();
+        const now = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(300 + comboCount * 80, now);
+        osc.frequency.exponentialRampToValueAtTime(600 + comboCount * 120, now + 0.08);
+        gain.gain.setValueAtTime(0.06, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+        osc.start(now);
+        osc.stop(now + 0.15);
+      } catch (e) { /* 静默失败 */ }
+    }
+
+    // ══════════════════════════════════════════════
+    //  💥 粒子爆炸系统
+    // ══════════════════════════════════════════════
+    const particleSystems = [];
+
+    function spawnParticleBurst(worldPos, colorHex, count) {
+      const geo = new THREE.BufferGeometry();
+      const positions = new Float32Array(count * 3);
+      const velocities = [];
+      const color = new THREE.Color(colorHex);
+
+      for (let i = 0; i < count; i++) {
+        positions[i * 3] = worldPos.x;
+        positions[i * 3 + 1] = worldPos.y;
+        positions[i * 3 + 2] = worldPos.z;
+        velocities.push({
+          x: (Math.random() - 0.5) * 0.4,
+          y: (Math.random() - 0.5) * 0.4 + 0.1,
+          z: (Math.random() - 0.5) * 0.3 + 0.15,
+        });
+      }
+
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      const mat = new THREE.PointsMaterial({
+        size: 0.35,
+        color,
+        transparent: true,
+        opacity: 1,
+        depthWrite: false,
+      });
+      const points = new THREE.Points(geo, mat);
+      scene.add(points);
+      particleSystems.push({ points, velocities, life: 1.0, geo, mat });
+    }
+
+    function updateParticles(dt) {
+      for (let i = particleSystems.length - 1; i >= 0; i--) {
+        const ps = particleSystems[i];
+        ps.life -= dt * 1.8;
+        if (ps.life <= 0) {
+          scene.remove(ps.points);
+          ps.geo.dispose();
+          ps.mat.dispose();
+          particleSystems.splice(i, 1);
+          continue;
+        }
+        ps.mat.opacity = ps.life;
+        const pos = ps.points.geometry.attributes.position;
+        for (let j = 0; j < ps.velocities.length; j++) {
+          const v = ps.velocities[j];
+          v.y -= dt * 0.6; // 重力
+          pos.array[j * 3] += v.x;
+          pos.array[j * 3 + 1] += v.y;
+          pos.array[j * 3 + 2] += v.z;
+        }
+        pos.needsUpdate = true;
+      }
+    }
+
+    // ══════════════════════════════════════════════
+    //  🔥 连击系统 (Combo)
+    // ══════════════════════════════════════════════
+    let comboCount = 0;
+    let comboTimer = null;
+    const comboDisplayEl = document.getElementById('comboDisplay');
+    const COMBO_TIMEOUT_MS = 2200;
+    const COMBO_COLORS = ['#8a9bb0', '#4a9eff', '#b44aff', '#ffc832', '#ff3355'];
+
+    function triggerCombo() {
+      comboCount += 1;
+      if (comboTimer) clearTimeout(comboTimer);
+      comboTimer = setTimeout(() => { comboCount = 0; }, COMBO_TIMEOUT_MS);
+
+      if (comboCount >= 2) {
+        const colorIdx = Math.min(Math.floor((comboCount - 2) / 2), COMBO_COLORS.length - 1);
+        const color = COMBO_COLORS[colorIdx];
+        comboDisplayEl.textContent = `COMBO ×${comboCount}`;
+        comboDisplayEl.style.color = color;
+        gsap.killTweensOf(comboDisplayEl);
+        gsap.fromTo(comboDisplayEl,
+          { scale: 1.5, opacity: 1 },
+          { scale: 0.8, opacity: 0, duration: 1.2, ease: 'power2.out' }
+        );
+        playComboSound(comboCount);
+      }
+    }
+
+    // ══════════════════════════════════════════════
+    //  ✨ 全屏闪光特效
+    // ══════════════════════════════════════════════
+    const screenFlashEl = document.getElementById('screenFlash');
+
+    function triggerScreenFlash(colorHex) {
+      screenFlashEl.style.background = `radial-gradient(circle at center, ${colorHex}66, ${colorHex}22, transparent 70%)`;
+      screenFlashEl.style.opacity = '1';
+      setTimeout(() => { screenFlashEl.style.opacity = '0'; }, 80);
+      setTimeout(() => { screenFlashEl.style.opacity = '0.4'; }, 160);
+      setTimeout(() => { screenFlashEl.style.opacity = '0'; }, 300);
+    }
+
+    // ══════════════════════════════════════════════
+    //  🌌 星空视差
+    // ══════════════════════════════════════════════
+    let parallaxX = 0, parallaxY = 0;
+    let targetParallaxX = 0, targetParallaxY = 0;
+
+    canvas.addEventListener('pointermove', (e) => {
+      targetParallaxX = (e.clientX / window.innerWidth - 0.5) * 2;
+      targetParallaxY = (e.clientY / window.innerHeight - 0.5) * 2;
+    });
+    canvas.addEventListener('pointerleave', () => {
+      targetParallaxX = 0;
+      targetParallaxY = 0;
+    });
 
     let total = 0;
     function toast(msg) {
@@ -539,8 +980,10 @@
         return;
       }
       const current = archiveCards[focusIndex];
-      currentCardEl.textContent = current.name;
-      focusTitleEl.textContent = `轨道卡库：${focusIndex + 1}/${archiveCards.length} - ${current.name}`;
+      const r = RARITY[current.rarity];
+      const stars = '★'.repeat(r.stars) + '☆'.repeat(5 - r.stars);
+      currentCardEl.textContent = `${current.name} [${r.label} ${stars}]`;
+      focusTitleEl.textContent = `轨道卡库：${focusIndex + 1}/${archiveCards.length} - ${current.name} [${r.label}]`;
     }
 
     function layoutArchiveCards(animate) {
@@ -558,8 +1001,11 @@
         };
         const targetRotationY = offset * -0.26;
         const targetScale = offset === 0 ? 0.66 : Math.max(0.44, 0.6 - Math.abs(offset) * 0.04);
-        entry.mat.emissive.setHex(offset === 0 ? 0x2e6586 : 0x0f1f31);
-        entry.mat.emissiveIntensity = offset === 0 ? 0.75 : 0.26;
+        entry.mat.emissive.setHex(offset === 0 ? parseInt(RARITY[entry.rarity].glow.slice(1), 16) : 0x0f1f31);
+        const isRainbow = rainbowModeEl.checked;
+        const rarityGlow = isRainbow ? 0.08 : (offset === 0 ? (RARITY[entry.rarity].stars * 0.18 + 0.15) : 0.26);
+        entry.mat.emissiveIntensity = rarityGlow;
+        entry.mat.roughness = isRainbow ? 0.55 : 0.38;
         entry.mat.opacity = offset === 0 ? 1 : Math.max(0.45, 1 - Math.abs(offset) * 0.12);
 
         if (animate) {
@@ -609,51 +1055,81 @@
 
     function drawCard(source) {
       const rainbowMode = rainbowModeEl.checked;
-      const name = pool[Math.floor(Math.random() * pool.length)] || DEFAULT_CARD_NAME;
-      const tex = textureFromBase64(PHOTO_BASE64[name], name.toUpperCase(), rainbowMode);
+      const cardData = drawRandomCard();
+      const name = cardData.name;
+      const rarityKey = cardData.rarity;
+      const r = RARITY[rarityKey];
+      const tex = textureFromBase64(null, name, rarityKey, rainbowMode);
       const geo = new THREE.PlaneGeometry(8, 12);
       const mat = new THREE.MeshStandardMaterial({
         map: tex,
-        metalness: 0.18,
-        roughness: 0.38,
-        emissive: rainbowMode ? 0x0a1520 : 0x18314b,
-        emissiveIntensity: rainbowMode ? 0.15 : 0.45,
+        metalness: rarityKey === 'mythic' ? 0.3 : rarityKey === 'legendary' ? 0.25 : 0.18,
+        roughness: rainbowMode ? 0.55 : 0.38,
+        emissive: rainbowMode ? 0x050810 : parseInt(r.glow.slice(1), 16),
+        emissiveIntensity: rainbowMode ? 0.08 : (rarityKey === 'mythic' ? 0.6 : rarityKey === 'legendary' ? 0.5 : 0.35),
         transparent: true,
         opacity: 1
       });
       const card = new THREE.Mesh(geo, mat);
-      card.position.set((Math.random() - 0.5) * 7, -1, -20);
-      card.rotation.y = -Math.PI;
-      card.scale.set(0.84, 0.84, 0.84);
+      // 卡牌从远处飞入，初始面朝下 (rotation.y = PI)
+      card.position.set((Math.random() - 0.5) * 5, -3, -18);
+      card.rotation.y = Math.PI; // 面朝下
+      card.rotation.x = (Math.random() - 0.5) * 0.3;
+      card.scale.set(0.3, 0.3, 0.3);
       cardGroup.add(card);
-      archiveCards.push({ name, mesh: card, geo, mat, tex, createdAt: Date.now() });
+      archiveCards.push({ name, rarity: rarityKey, mesh: card, geo, mat, tex, createdAt: Date.now() });
       trimArchive();
       focusIndex = archiveCards.length - 1;
 
-      gsap.to(card.position, { z: 1.5, y: 0.4, duration: 0.55, ease: 'power2.out' });
-      gsap.to(card.rotation, { y: 0, duration: 0.9, ease: 'power3.out' });
-      gsap.to(card.scale, {
-        x: 1.05,
-        y: 1.05,
-        z: 1.05,
-        yoyo: true,
-        repeat: 1,
-        duration: 0.3,
-        ease: 'sine.inOut'
-      });
+      // ── GSAP 翻转揭示动画 ──
+      const tl = gsap.timeline();
+      tl.to(card.position, { z: 1.5, y: 0.4, duration: 0.5, ease: 'power3.out' })
+        .to(card.rotation, { y: 0, duration: 0.7, ease: 'elastic.out(1, 0.6)' }, '<')
+        .to(card.rotation, { x: 0, duration: 0.4, ease: 'power2.out' }, '<0.1')
+        .to(card.scale, {
+          x: 0.66, y: 0.66, z: 0.66,
+          duration: 0.4, ease: 'back.out(1.5)'
+        }, '<');
+
+      // 史诗+的额外弹跳
+      if (rarityKey === 'epic' || rarityKey === 'legendary' || rarityKey === 'mythic') {
+        const bounceScale = rarityKey === 'mythic' ? 0.75 : 0.72;
+        tl.to(card.scale, { x: bounceScale, y: bounceScale, z: bounceScale, duration: 0.15, ease: 'sine.inOut', yoyo: true, repeat: 1 });
+      }
+
       setTimeout(() => {
         layoutArchiveCards(true);
       }, CARD_DISPLAY_MS);
 
+      // ── 💥 粒子爆炸 ──
+      const particleCount = rarityKey === 'mythic' ? 120 : rarityKey === 'legendary' ? 80 : rarityKey === 'epic' ? 50 : 25;
+      spawnParticleBurst(card.position.clone(), parseInt(r.border.slice(1), 16), particleCount);
+
+      // ── 🔥 连击 ──
+      triggerCombo();
+
+      // ── 🎵 音效 ──
+      playDrawSound(rarityKey);
+
+      // ── ✨ 全屏闪光 (史诗+) ──
+      if (rarityKey === 'epic' || rarityKey === 'legendary' || rarityKey === 'mythic') {
+        triggerScreenFlash(r.border);
+      }
+
       total += 1;
       totalEl.textContent = String(total);
+      const stars = '★'.repeat(r.stars) + '☆'.repeat(5 - r.stars);
       const item = document.createElement('li');
-      item.textContent = `${new Date().toLocaleTimeString()} - ${name}`;
+      item.textContent = `${new Date().toLocaleTimeString()} - [${r.label}] ${name} ${stars}`;
+      item.style.color = r.border;
       historyEl.prepend(item);
       while (historyEl.children.length > 5) {
         historyEl.lastElementChild.remove();
       }
-      toast(`已抽到 ${name} 卡牌${source ? ` (${source})` : ''}！`);
+      toast(`抽到 [${r.label}] ${name} ${stars}${source ? ` (${source})` : ''}！`);
+      if (rarityKey === 'mythic' || rarityKey === 'legendary') {
+        setTimeout(() => toast(`✦ ${r.label}级卡牌降临！✦`), TOAST_DISPLAY_MS + 200);
+      }
       updateArchiveLabel();
     }
 
@@ -973,13 +1449,34 @@
         entry.mat.dispose();
         entry.tex.dispose();
       });
+      particleSystems.forEach((ps) => {
+        scene.remove(ps.points);
+        ps.geo.dispose();
+        ps.mat.dispose();
+      });
+      if (audioCtx) audioCtx.close();
     });
 
+    let lastFrameTime = performance.now();
     function animate() {
       requestAnimationFrame(animate);
+      const now = performance.now();
+      const dt = Math.min((now - lastFrameTime) / 1000, 0.1);
+      lastFrameTime = now;
+
+      // ── 星空视差 ──
+      parallaxX += (targetParallaxX - parallaxX) * 0.03;
+      parallaxY += (targetParallaxY - parallaxY) * 0.03;
       starField.rotation.y += 0.00035;
       starField.rotation.x += 0.00008;
-      point.position.x = Math.sin(performance.now() * 0.0006) * 12;
+      starField.position.x = parallaxX * 3;
+      starField.position.y = -parallaxY * 2;
+
+      point.position.x = Math.sin(now * 0.0006) * 12;
+
+      // ── 粒子更新 ──
+      updateParticles(dt);
+
       if (composer) {
         composer.render();
       } else {
