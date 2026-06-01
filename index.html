@@ -517,7 +517,6 @@
         gestureBtn.textContent = '唤醒手势抽卡';
         handEnabled = false;
         toast(`手势启动失败：${err && err.message ? err.message : '请检查摄像头权限'}`);
-        throw err;
       }
     });
 
