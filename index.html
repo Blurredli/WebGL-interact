@@ -251,15 +251,25 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
 
   <script>
+    // 预留可替换卡图数据，保持 key 作为卡池标识
     const PHOTO_BASE64 = {
       nebula: '',
       aurora: '',
       supernova: ''
     };
+    const RENDER_PIXEL_RATIO_CAP = 2;
+    const STAR_COUNT = window.innerWidth < 768 ? 1800 : 2600;
+    const CARD_DISPLAY_MS = 1500;
+    const DRAW_COOLDOWN_MS = 900;
+    const PROGRESS_STEP_MAX = 18;
+    const PROGRESS_SOFT_CAP = 92;
+    const HAND_DETECTION_CONFIDENCE = 0.6;
+    const HAND_TRACKING_CONFIDENCE = 0.6;
+    const PINCH_THRESHOLD = 0.05;
 
     const canvas = document.getElementById('scene');
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, RENDER_PIXEL_RATIO_CAP));
     renderer.setSize(window.innerWidth, window.innerHeight);
 
     const scene = new THREE.Scene();
@@ -273,7 +283,7 @@
 
     const starGeo = new THREE.BufferGeometry();
     const stars = [];
-    for (let i = 0; i < 2600; i += 1) {
+    for (let i = 0; i < STAR_COUNT; i += 1) {
       stars.push((Math.random() - 0.5) * 520, (Math.random() - 0.5) * 520, (Math.random() - 0.5) * 520);
     }
     starGeo.setAttribute('position', new THREE.Float32BufferAttribute(stars, 3));
@@ -379,7 +389,7 @@
             tex.dispose();
           }
         });
-      }, 1500);
+      }, CARD_DISPLAY_MS);
 
       total += 1;
       totalEl.textContent = String(total);
@@ -400,7 +410,7 @@
 
     let progress = 0;
     const timer = setInterval(() => {
-      progress = Math.min(progress + Math.random() * 18, 92);
+      progress = Math.min(progress + Math.random() * PROGRESS_STEP_MAX, PROGRESS_SOFT_CAP);
       progressBar.style.width = `${progress.toFixed(0)}%`;
       progressText.textContent = `准备资源 ${progress.toFixed(0)}%`;
     }, 220);
@@ -444,8 +454,8 @@
     hands.setOptions({
       maxNumHands: 1,
       modelComplexity: 1,
-      minDetectionConfidence: 0.6,
-      minTrackingConfidence: 0.6
+      minDetectionConfidence: HAND_DETECTION_CONFIDENCE,
+      minTrackingConfidence: HAND_TRACKING_CONFIDENCE
     });
 
     hands.onResults((results) => {
@@ -459,13 +469,13 @@
       const dx = tipIndex.x - tipThumb.x;
       const dy = tipIndex.y - tipThumb.y;
       const pinchDist = Math.sqrt(dx * dx + dy * dy);
-      const pinched = pinchDist < 0.05;
+      const pinched = pinchDist < PINCH_THRESHOLD;
       updateCursor(tipIndex.x, tipIndex.y, pinched);
 
       if (pinched && !isPinched && canDraw) {
         canDraw = false;
         drawCard();
-        setTimeout(() => { canDraw = true; }, 900);
+        setTimeout(() => { canDraw = true; }, DRAW_COOLDOWN_MS);
       }
       isPinched = pinched;
     });
@@ -489,15 +499,24 @@
         gestureBtn.disabled = false;
         gestureBtn.textContent = '唤醒手势抽卡';
         handEnabled = false;
+        toast(`手势启动失败：${err && err.message ? err.message : '请检查摄像头权限'}`);
         throw err;
       }
     });
 
     document.getElementById('fullscreenBtn').addEventListener('click', async () => {
-      if (!document.fullscreenElement) {
-        await document.documentElement.requestFullscreen();
-      } else {
-        await document.exitFullscreen();
+      try {
+        if (!document.fullscreenEnabled) {
+          toast('当前浏览器不支持全屏 API');
+          return;
+        }
+        if (!document.fullscreenElement) {
+          await document.documentElement.requestFullscreen();
+        } else {
+          await document.exitFullscreen();
+        }
+      } catch (err) {
+        toast(`全屏切换失败：${err && err.message ? err.message : '未知错误'}`);
       }
     });
 
