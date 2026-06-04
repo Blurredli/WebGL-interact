@@ -337,6 +337,125 @@
       }
       .gesture-btn { bottom: 14px; }
     }
+
+    .modal-box {
+      background: var(--glass);
+      border: 1px solid var(--line);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 16px;
+      box-shadow: 0 16px 40px rgba(0,0,0,0.5);
+    }
+
+    .album-card {
+      border-radius: 10px;
+      padding: 10px 8px;
+      text-align: center;
+      font-size: 12px;
+      transition: transform .2s, box-shadow .2s;
+      cursor: default;
+      position: relative;
+      overflow: hidden;
+    }
+    .album-card.collected {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+    .album-card.collected:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 18px rgba(0,0,0,0.3);
+    }
+    .album-card.uncollected {
+      background: rgba(0,0,0,0.4);
+      border: 1px solid rgba(255,255,255,0.08);
+      filter: brightness(0.3);
+    }
+    .album-card .card-name {
+      font-weight: 600;
+      margin-top: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .album-card .card-stars {
+      font-size: 11px;
+      margin-top: 2px;
+    }
+    .album-card .card-rarity {
+      font-size: 10px;
+      opacity: 0.8;
+      margin-top: 2px;
+    }
+
+    .fusion-slot {
+      transition: border-color .2s, background .2s;
+    }
+    .fusion-slot:hover {
+      border-color: rgba(255,255,255,0.5);
+      background: rgba(255,255,255,0.05);
+    }
+    .fusion-slot.selected {
+      border-style: solid;
+      border-color: var(--accent);
+      background: rgba(115,245,255,0.08);
+    }
+
+    .fusion-pick-card {
+      border-radius: 8px;
+      padding: 8px;
+      text-align: center;
+      font-size: 11px;
+      cursor: pointer;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(255,255,255,0.06);
+      transition: background .15s, border-color .15s;
+    }
+    .fusion-pick-card:hover {
+      background: rgba(255,255,255,0.12);
+      border-color: var(--accent);
+    }
+
+    @keyframes eventPulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    @keyframes fusionGlow {
+      0% { box-shadow: 0 0 10px rgba(115,245,255,0.3); }
+      50% { box-shadow: 0 0 30px rgba(178,74,255,0.6), 0 0 60px rgba(115,245,255,0.3); }
+      100% { box-shadow: 0 0 10px rgba(115,245,255,0.3); }
+    }
+
+    @keyframes resultGlow {
+      0% { text-shadow: 0 0 8px currentColor; }
+      50% { text-shadow: 0 0 24px currentColor, 0 0 48px currentColor; }
+      100% { text-shadow: 0 0 8px currentColor; }
+    }
+
+    .glow-text {
+      animation: resultGlow 1.5s ease-in-out infinite;
+    }
+
+    .detail-stat-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      font-size: 13px;
+    }
+    .detail-stat-row:last-child {
+      border-bottom: none;
+    }
+    .detail-flavor {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.05);
+      font-style: italic;
+      font-size: 12px;
+      opacity: 0.85;
+      line-height: 1.5;
+    }
   </style>
 </head>
 <body>
@@ -369,6 +488,14 @@
       <button id="nextCardBtn" class="btn" type="button">下一张</button>
       <button id="multiDrawBtn" class="btn" type="button">连抽3张</button>
     </div>
+    <div class="tool-row">
+      <button id="albumBtn" class="btn" type="button">图鉴</button>
+      <button id="wheelBtn" class="btn" type="button">命运之轮</button>
+      <button id="fusionBtn" class="btn" type="button">融合</button>
+    </div>
+    <div class="tool-row">
+      <button id="detailBtn" class="btn" type="button">详情</button>
+    </div>
     <button id="fullscreenBtn" class="btn" type="button">全屏切换</button>
     </div>
   </aside>
@@ -399,8 +526,89 @@
 
   <div id="intro" class="overlay hidden">
     <h2>欢迎来到星际卡牌中心</h2>
-    <p>可点击“跳过”立即进入，或等待动画自动结束。</p>
+    <p>可点击"跳过"立即进入，或等待动画自动结束。</p>
     <button id="skipIntro" class="btn" type="button">跳过</button>
+  </div>
+
+  <!-- 图鉴 Modal -->
+  <div id="albumOverlay" class="overlay hidden" style="overflow-y:auto;">
+    <div class="glass modal-box" style="width:min(700px,90vw);max-height:85vh;overflow-y:auto;padding:20px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h2 style="margin:0;font-family:'Orbitron','Noto Sans SC',sans-serif;font-size:20px;">卡牌图鉴</h2>
+        <button id="albumCloseBtn" class="btn" type="button">关闭</button>
+      </div>
+      <div id="albumProgress" style="margin-bottom:12px;"></div>
+      <div id="albumGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;"></div>
+    </div>
+  </div>
+
+  <!-- 命运之轮 Modal -->
+  <div id="wheelOverlay" class="overlay hidden">
+    <div class="glass modal-box" style="width:min(440px,90vw);padding:20px;text-align:center;">
+      <h2 style="margin:0 0 12px;font-family:'Orbitron','Noto Sans SC',sans-serif;font-size:20px;">命运之轮</h2>
+      <canvas id="wheelCanvas" width="320" height="320" style="margin:0 auto;display:block;"></canvas>
+      <div id="wheelResult" style="margin-top:12px;font-size:18px;font-weight:bold;min-height:28px;"></div>
+      <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;">
+        <button id="wheelSpinBtn" class="btn" type="button">旋转！</button>
+        <button id="wheelCloseBtn" class="btn" type="button">关闭</button>
+      </div>
+      <div id="wheelCooldown" style="margin-top:6px;font-size:12px;opacity:0.7;"></div>
+    </div>
+  </div>
+
+  <!-- 融合 Modal -->
+  <div id="fusionOverlay" class="overlay hidden">
+    <div class="glass modal-box" style="width:min(520px,90vw);padding:20px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h2 style="margin:0;font-family:'Orbitron','Noto Sans SC',sans-serif;font-size:20px;">卡牌融合</h2>
+        <button id="fusionCloseBtn" class="btn" type="button">关闭</button>
+      </div>
+      <p style="font-size:13px;opacity:0.8;margin-bottom:10px;">选择两张相同稀有度的卡牌进行融合，获得更高稀有度的卡牌！</p>
+      <div id="fusionSelect" style="display:flex;gap:12px;justify-content:center;margin-bottom:12px;">
+        <div id="fusionSlot1" class="fusion-slot" style="width:140px;height:200px;border:2px dashed rgba(255,255,255,0.3);border-radius:12px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;opacity:0.7;">选择卡牌1</div>
+        <div style="display:flex;align-items:center;font-size:28px;">⚡</div>
+        <div id="fusionSlot2" class="fusion-slot" style="width:140px;height:200px;border:2px dashed rgba(255,255,255,0.3);border-radius:12px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;opacity:0.7;">选择卡牌2</div>
+      </div>
+      <div style="text-align:center;">
+        <button id="fusionGoBtn" class="btn" type="button" disabled>融合！</button>
+      </div>
+      <div id="fusionMsg" style="margin-top:8px;font-size:13px;text-align:center;min-height:20px;"></div>
+      <div id="fusionRarityList" style="margin-top:12px;"></div>
+    </div>
+  </div>
+
+  <!-- 融合卡牌选择 Modal -->
+  <div id="fusionPickOverlay" class="overlay hidden">
+    <div class="glass modal-box" style="width:min(500px,90vw);max-height:80vh;overflow-y:auto;padding:20px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h3 style="margin:0;font-size:16px;">选择卡牌</h3>
+        <button id="fusionPickCloseBtn" class="btn" type="button">取消</button>
+      </div>
+      <div id="fusionPickGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px;"></div>
+    </div>
+  </div>
+
+  <!-- 卡牌详情 Modal -->
+  <div id="detailOverlay" class="overlay hidden">
+    <div class="glass modal-box" style="width:min(420px,90vw);padding:20px;text-align:center;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h2 style="margin:0;font-family:'Orbitron','Noto Sans SC',sans-serif;font-size:18px;">卡牌详情</h2>
+        <button id="detailCloseBtn" class="btn" type="button">关闭</button>
+      </div>
+      <div id="detail3D" style="width:200px;height:300px;margin:0 auto;position:relative;"></div>
+      <div id="detailInfo" style="margin-top:14px;text-align:left;"></div>
+    </div>
+  </div>
+
+  <!-- 宇宙事件 Banner -->
+  <div id="cosmicBanner" style="position:fixed;top:-80px;left:0;right:0;z-index:50;padding:14px 20px;text-align:center;font-size:16px;font-weight:bold;font-family:'Orbitron','Noto Sans SC',sans-serif;pointer-events:none;transition:top 0.5s cubic-bezier(0.22,1,0.36,1);"></div>
+
+  <!-- 活跃事件指示器 -->
+  <div id="eventIndicator" style="position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:21;display:none;">
+    <div class="glass" style="padding:6px 14px;border-radius:10px;font-size:12px;display:flex;align-items:center;gap:6px;">
+      <span id="eventDot" style="width:8px;height:8px;border-radius:50%;display:inline-block;animation:eventPulse 1.2s infinite;"></span>
+      <span id="eventLabel"></span>
+    </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
@@ -430,30 +638,30 @@
 
     const CARD_POOL = [
       // ── 普通 1★ ──
-      { name: '星尘',     rarity: 'common' },
-      { name: '流星',     rarity: 'common' },
-      { name: '彗尾',     rarity: 'common' },
-      { name: '小行星',   rarity: 'common' },
-      { name: '光斑',     rarity: 'common' },
-      { name: '微光',     rarity: 'common' },
+      { name: '星尘',     rarity: 'common', flavor: '宇宙间最微小的光点，却是万物的起点。' },
+      { name: '流星',     rarity: 'common', flavor: '划过天际的瞬间，承载着无数人的愿望。' },
+      { name: '彗尾',     rarity: 'common', flavor: '冰与尘的舞蹈，在太阳风中绽放银色长裙。' },
+      { name: '小行星',   rarity: 'common', flavor: '孤独的旅行者，在无尽的虚空中漂流。' },
+      { name: '光斑',     rarity: 'common', flavor: '恒星表面的一缕微光，稍纵即逝却永恒存在。' },
+      { name: '微光',     rarity: 'common', flavor: '黑暗中最温柔的坚持，照亮前行的方向。' },
       // ── 稀有 2★ ──
-      { name: '星云',     rarity: 'rare' },
-      { name: '极光',     rarity: 'rare' },
-      { name: '日珥',     rarity: 'rare' },
-      { name: '星团',     rarity: 'rare' },
-      { name: '暗物质',   rarity: 'rare' },
+      { name: '星云',     rarity: 'rare', flavor: '恒星的摇篮，色彩斑斓的宇宙画卷。' },
+      { name: '极光',     rarity: 'rare', flavor: '磁场与粒子的交响，天空最华丽的帷幕。' },
+      { name: '日珥',     rarity: 'rare', flavor: '太阳的火焰之舞，炽热而壮美。' },
+      { name: '星团',     rarity: 'rare', flavor: '千百颗恒星汇聚，编织出璀璨的宝石盒。' },
+      { name: '暗物质',   rarity: 'rare', flavor: '看不见的力量，却维系着整个宇宙的秩序。' },
       // ── 史诗 3★ ──
-      { name: '超新星',   rarity: 'epic' },
-      { name: '黑洞边缘', rarity: 'epic' },
-      { name: '脉冲星',   rarity: 'epic' },
-      { name: '虫洞',     rarity: 'epic' },
+      { name: '超新星',   rarity: 'epic', flavor: '恒星最后的怒吼，以毁灭照亮整个星系。' },
+      { name: '黑洞边缘', rarity: 'epic', flavor: '时间在此凝滞，光也无法逃脱的深渊。' },
+      { name: '脉冲星',   rarity: 'epic', flavor: '宇宙的心跳，精确到毫秒的星际灯塔。' },
+      { name: '虫洞',     rarity: 'epic', flavor: '时空的捷径，连接两个未知世界的通道。' },
       // ── 传说 4★ ──
-      { name: '银河核心', rarity: 'legendary' },
-      { name: '时间裂缝', rarity: 'legendary' },
-      { name: '维度之门', rarity: 'legendary' },
+      { name: '银河核心', rarity: 'legendary', flavor: '万千星辰的归宿，银河系最神秘的心脏。' },
+      { name: '时间裂缝', rarity: 'legendary', flavor: '过去与未来在此交汇，因果律在此瓦解。' },
+      { name: '维度之门', rarity: 'legendary', flavor: '通往平行宇宙的入口，无限可能的起点。' },
       // ── 神话 5★ ──
-      { name: '创世之光', rarity: 'mythic' },
-      { name: '永恒奇点', rarity: 'mythic' },
+      { name: '创世之光', rarity: 'mythic', flavor: '宇宙大爆炸的第一缕光，万物起源的见证。' },
+      { name: '永恒奇点', rarity: 'mythic', flavor: '无限密度与无限时空的交汇，超越一切的存在。' },
     ];
 
     function rollRarity() {
@@ -770,6 +978,7 @@
     const statsToggleBtn = document.getElementById('statsToggle');
     const archiveCards = [];
     let focusIndex = -1;
+    const collectedCards = new Set();
 
     if (isMobileDevice) statsPanel.classList.add('collapsed');
     statsToggleBtn.addEventListener('click', () => statsPanel.classList.toggle('collapsed'));
@@ -1064,7 +1273,7 @@
 
     function drawCard(source) {
       const rainbowMode = rainbowModeEl.checked;
-      const cardData = drawRandomCard();
+      const cardData = patchedDrawRandomCard();
       const name = cardData.name;
       const rarityKey = cardData.rarity;
       const r = RARITY[rarityKey];
@@ -1127,6 +1336,21 @@
 
       total += 1;
       totalEl.textContent = String(total);
+      collectedCards.add(name);
+
+      // ── Post-draw: Fortune boost & Cosmic events ──
+      if (fortuneBoostRarity) {
+        fortuneBoostRarity = null; // Reset after one draw
+      }
+      if (activeCosmicEvent) {
+        if (activeCosmicEvent.drawsLeft !== null) {
+          activeCosmicEvent.drawsLeft--;
+          if (activeCosmicEvent.drawsLeft <= 0) {
+            activeCosmicEvent = null;
+            eventIndicator.style.display = 'none';
+          }
+        }
+      }
       const stars = '★'.repeat(r.stars) + '☆'.repeat(5 - r.stars);
       const item = document.createElement('li');
       item.textContent = `${new Date().toLocaleTimeString()} - [${r.label}] ${name} ${stars}`;
@@ -1297,7 +1521,7 @@
         updateCursor(filtered.x, filtered.y, pinched);
 
         // ── 捏合抽卡 ──
-        if (pinched && !isPinched && canDraw) {
+        if (pinched && !isPinched && (canDraw || (activeCosmicEvent && activeCosmicEvent.id === 'cosmic_blessing' && activeCosmicEvent.drawsLeft > 0))) {
           canDraw = false;
           drawCard('捏合');
           setTimeout(() => { canDraw = true; }, DRAW_COOLDOWN_MS);
@@ -1482,7 +1706,12 @@
       if (Math.abs(deltaX) > POINTER_SWIPE_THRESHOLD_PX && Math.abs(deltaX) > Math.abs(deltaY)) {
         shiftFocus(deltaX > 0 ? -1 : 1, '拖拽');
       } else {
-        drawCard('点击');
+        // Cosmic blessing: free draw (skip cooldown)
+        if (activeCosmicEvent && activeCosmicEvent.id === 'cosmic_blessing' && activeCosmicEvent.drawsLeft > 0) {
+          drawCard('点击');
+        } else {
+          drawCard('点击');
+        }
       }
     });
 
@@ -1577,6 +1806,690 @@
     });
 
     updateArchiveLabel();
+
+    // ══════════════════════════════════════════════
+    //  📖 Feature 1: Card Collection Album (图鉴)
+    // ══════════════════════════════════════════════
+    const albumOverlay = document.getElementById('albumOverlay');
+    const albumGrid = document.getElementById('albumGrid');
+    const albumProgress = document.getElementById('albumProgress');
+    const albumCloseBtn = document.getElementById('albumCloseBtn');
+    const albumBtn = document.getElementById('albumBtn');
+
+    function renderAlbum() {
+      albumGrid.innerHTML = '';
+      const totalCards = CARD_POOL.length;
+      const collected = CARD_POOL.filter(c => collectedCards.has(c.name)).length;
+      const pct = totalCards > 0 ? Math.round((collected / totalCards) * 100) : 0;
+      albumProgress.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <span>收集进度：${collected}/${totalCards}</span>
+          <span>${pct}%</span>
+        </div>
+        <div class="progress-wrap">
+          <div class="progress-bar" style="width:${pct}%;"></div>
+        </div>
+      `;
+      CARD_POOL.forEach(card => {
+        const r = RARITY[card.rarity];
+        const isCollected = collectedCards.has(card.name);
+        const div = document.createElement('div');
+        div.className = `album-card ${isCollected ? 'collected' : 'uncollected'}`;
+        if (isCollected) {
+          div.style.borderColor = r.border + '66';
+          div.innerHTML = `
+            <div style="color:${r.border};font-size:22px;">★</div>
+            <div class="card-name" style="color:${r.border};">${card.name}</div>
+            <div class="card-stars" style="color:${r.border};">${'★'.repeat(r.stars)}${'☆'.repeat(5 - r.stars)}</div>
+            <div class="card-rarity" style="color:${r.border};">${r.label}</div>
+          `;
+        } else {
+          div.innerHTML = `
+            <div style="font-size:22px;opacity:0.3;">?</div>
+            <div class="card-name" style="opacity:0.4;">???</div>
+            <div class="card-stars" style="opacity:0.3;">☆☆☆☆☆</div>
+            <div class="card-rarity" style="opacity:0.3;">${r.label}</div>
+          `;
+        }
+        albumGrid.appendChild(div);
+      });
+    }
+
+    albumBtn.addEventListener('click', () => {
+      renderAlbum();
+      albumOverlay.classList.remove('hidden');
+    });
+    albumCloseBtn.addEventListener('click', () => albumOverlay.classList.add('hidden'));
+
+    // ══════════════════════════════════════════════
+    //  🎡 Feature 2: Fortune Wheel (命运之轮)
+    // ══════════════════════════════════════════════
+    const wheelOverlay = document.getElementById('wheelOverlay');
+    const wheelCanvas = document.getElementById('wheelCanvas');
+    const wheelCtx = wheelCanvas.getContext('2d');
+    const wheelResultEl = document.getElementById('wheelResult');
+    const wheelSpinBtn = document.getElementById('wheelSpinBtn');
+    const wheelCloseBtn = document.getElementById('wheelCloseBtn');
+    const wheelCooldownEl = document.getElementById('wheelCooldown');
+    const wheelBtn = document.getElementById('wheelBtn');
+
+    const WHEEL_SEGMENTS = [
+      { label: '普通加成', color: '#8a9bb0', rarity: 'common' },
+      { label: '稀有加成', color: '#4a9eff', rarity: 'rare' },
+      { label: '史诗加成', color: '#b44aff', rarity: 'epic' },
+      { label: '传说加成', color: '#ffc832', rarity: 'legendary' },
+      { label: '神话加成', color: '#ff3355', rarity: 'mythic' },
+      { label: '无效果',   color: '#3a3a4a', rarity: null },
+    ];
+    const WHEEL_SEG_COUNT = WHEEL_SEGMENTS.length;
+    const WHEEL_ARC = (Math.PI * 2) / WHEEL_SEG_COUNT;
+
+    let wheelAngle = 0;
+    let wheelSpinning = false;
+    let wheelLastSpinTime = 0;
+    const WHEEL_COOLDOWN_MS = 30000;
+    let fortuneBoostRarity = null; // null or rarity key
+
+    function drawWheel() {
+      const cx = 160, cy = 160, radius = 140;
+      wheelCtx.clearRect(0, 0, 320, 320);
+      WHEEL_SEGMENTS.forEach((seg, i) => {
+        const startAngle = wheelAngle + i * WHEEL_ARC;
+        const endAngle = startAngle + WHEEL_ARC;
+        wheelCtx.beginPath();
+        wheelCtx.moveTo(cx, cy);
+        wheelCtx.arc(cx, cy, radius, startAngle, endAngle);
+        wheelCtx.closePath();
+        wheelCtx.fillStyle = seg.color + 'cc';
+        wheelCtx.fill();
+        wheelCtx.strokeStyle = 'rgba(255,255,255,0.3)';
+        wheelCtx.lineWidth = 1.5;
+        wheelCtx.stroke();
+        // Label
+        wheelCtx.save();
+        wheelCtx.translate(cx, cy);
+        wheelCtx.rotate(startAngle + WHEEL_ARC / 2);
+        wheelCtx.fillStyle = '#fff';
+        wheelCtx.font = 'bold 13px "Noto Sans SC", sans-serif';
+        wheelCtx.textAlign = 'center';
+        wheelCtx.fillText(seg.label, radius * 0.6, 4);
+        wheelCtx.restore();
+      });
+      // Center circle
+      wheelCtx.beginPath();
+      wheelCtx.arc(cx, cy, 18, 0, Math.PI * 2);
+      wheelCtx.fillStyle = 'rgba(255,255,255,0.15)';
+      wheelCtx.fill();
+      wheelCtx.strokeStyle = 'rgba(255,255,255,0.4)';
+      wheelCtx.lineWidth = 2;
+      wheelCtx.stroke();
+      // Pointer
+      wheelCtx.beginPath();
+      wheelCtx.moveTo(cx, cy - radius - 8);
+      wheelCtx.lineTo(cx - 10, cy - radius + 8);
+      wheelCtx.lineTo(cx + 10, cy - radius + 8);
+      wheelCtx.closePath();
+      wheelCtx.fillStyle = '#fff';
+      wheelCtx.fill();
+    }
+
+    function spinWheel() {
+      if (wheelSpinning) return;
+      const now = Date.now();
+      if (now - wheelLastSpinTime < WHEEL_COOLDOWN_MS) {
+        const remaining = Math.ceil((WHEEL_COOLDOWN_MS - (now - wheelLastSpinTime)) / 1000);
+        wheelCooldownEl.textContent = `冷却中... ${remaining}秒后可再次旋转`;
+        return;
+      }
+      wheelSpinning = true;
+      wheelResultEl.textContent = '';
+      wheelResultEl.className = '';
+      const spinDuration = 4000;
+      const totalRotation = Math.PI * 2 * (5 + Math.random() * 5); // 5-10 full rotations
+      const startAngle = wheelAngle;
+      const startTime = performance.now();
+
+      function animateSpin(timestamp) {
+        const elapsed = timestamp - startTime;
+        const progress = Math.min(elapsed / spinDuration, 1);
+        // Ease out cubic
+        const eased = 1 - Math.pow(1 - progress, 3);
+        wheelAngle = startAngle + totalRotation * eased;
+        drawWheel();
+        if (progress < 1) {
+          requestAnimationFrame(animateSpin);
+        } else {
+          wheelSpinning = false;
+          wheelLastSpinTime = Date.now();
+          // Determine result: the segment at the top (pointer at -PI/2)
+          const normalizedAngle = (((-wheelAngle - Math.PI / 2) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+          const segIndex = Math.floor(normalizedAngle / WHEEL_ARC) % WHEEL_SEG_COUNT;
+          const result = WHEEL_SEGMENTS[segIndex];
+          if (result.rarity) {
+            fortuneBoostRarity = result.rarity;
+            wheelResultEl.textContent = `✨ ${result.label}！下次抽卡该稀有度权重×3 ✨`;
+            wheelResultEl.style.color = result.color;
+            wheelResultEl.className = 'glow-text';
+          } else {
+            fortuneBoostRarity = null;
+            wheelResultEl.textContent = '无效果...命运如此捉弄人';
+            wheelResultEl.style.color = '#888';
+            wheelResultEl.className = '';
+          }
+          wheelCooldownEl.textContent = '30秒冷却中...';
+          startWheelCooldownTimer();
+        }
+      }
+      requestAnimationFrame(animateSpin);
+    }
+
+    let wheelCooldownInterval = null;
+    function startWheelCooldownTimer() {
+      if (wheelCooldownInterval) clearInterval(wheelCooldownInterval);
+      wheelCooldownInterval = setInterval(() => {
+        const elapsed = Date.now() - wheelLastSpinTime;
+        if (elapsed >= WHEEL_COOLDOWN_MS) {
+          wheelCooldownEl.textContent = '可以旋转了！';
+          clearInterval(wheelCooldownInterval);
+          wheelCooldownInterval = null;
+        } else {
+          wheelCooldownEl.textContent = `冷却中... ${Math.ceil((WHEEL_COOLDOWN_MS - elapsed) / 1000)}秒`;
+        }
+      }, 1000);
+    }
+
+    wheelBtn.addEventListener('click', () => {
+      drawWheel();
+      wheelOverlay.classList.remove('hidden');
+    });
+    wheelSpinBtn.addEventListener('click', spinWheel);
+    wheelCloseBtn.addEventListener('click', () => wheelOverlay.classList.add('hidden'));
+
+    // ── Patched draw function (respects fortune boost & cosmic events) ──
+    function patchedDrawRandomCard() {
+      // Supernova: guarantee epic+
+      if (activeCosmicEvent && activeCosmicEvent.id === 'supernova' && activeCosmicEvent.drawsLeft > 0) {
+        const epicPlus = ['epic', 'legendary', 'mythic'];
+        const rarityKey = epicPlus[Math.floor(Math.random() * epicPlus.length)];
+        const candidates = CARD_POOL.filter(c => c.rarity === rarityKey);
+        return candidates[Math.floor(Math.random() * candidates.length)] || CARD_POOL[0];
+      }
+
+      // Build weights
+      let weights = {};
+      if (darkMatterWeights) {
+        weights = { ...darkMatterWeights };
+      } else {
+        RARITY_KEYS.forEach(k => { weights[k] = RARITY[k].weight; });
+      }
+
+      // Fortune wheel boost: 3x weight for boosted rarity
+      if (fortuneBoostRarity) {
+        weights[fortuneBoostRarity] = (weights[fortuneBoostRarity] || RARITY[fortuneBoostRarity].weight) * 3;
+      }
+
+      // Meteor shower: +50% rare or better
+      if (activeCosmicEvent && activeCosmicEvent.id === 'meteor_shower' && activeCosmicEvent.drawsLeft > 0) {
+        ['rare', 'epic', 'legendary', 'mythic'].forEach(k => {
+          weights[k] = (weights[k] || RARITY[k].weight) * 1.5;
+        });
+      }
+
+      const totalW = Object.values(weights).reduce((s, v) => s + v, 0);
+      let r = Math.random() * totalW;
+      for (const key of RARITY_KEYS) {
+        r -= (weights[key] || 0);
+        if (r <= 0) {
+          const pool = CARD_POOL.filter(c => c.rarity === key);
+          return pool[Math.floor(Math.random() * pool.length)] || CARD_POOL[0];
+        }
+      }
+      return CARD_POOL[0];
+    }
+
+    // ══════════════════════════════════════════════
+    //  ⚡ Feature 3: Card Fusion System (融合)
+    // ══════════════════════════════════════════════
+    const fusionOverlay = document.getElementById('fusionOverlay');
+    const fusionBtn = document.getElementById('fusionBtn');
+    const fusionCloseBtn = document.getElementById('fusionCloseBtn');
+    const fusionSlot1 = document.getElementById('fusionSlot1');
+    const fusionSlot2 = document.getElementById('fusionSlot2');
+    const fusionGoBtn = document.getElementById('fusionGoBtn');
+    const fusionMsg = document.getElementById('fusionMsg');
+    const fusionRarityList = document.getElementById('fusionRarityList');
+    const fusionPickOverlay = document.getElementById('fusionPickOverlay');
+    const fusionPickGrid = document.getElementById('fusionPickGrid');
+    const fusionPickCloseBtn = document.getElementById('fusionPickCloseBtn');
+
+    let fusionSelected = [null, null]; // [cardName1, cardName2]
+    let fusionPickingSlot = 0; // 0 or 1
+
+    // Collection with counts for fusion
+    function getCollectionCounts() {
+      const counts = {};
+      archiveCards.forEach(entry => {
+        if (!counts[entry.name]) counts[entry.name] = 0;
+        counts[entry.name]++;
+      });
+      return counts;
+    }
+
+    function renderFusionSlots() {
+      [fusionSlot1, fusionSlot2].forEach((slot, idx) => {
+        const sel = fusionSelected[idx];
+        if (sel) {
+          const card = CARD_POOL.find(c => c.name === sel);
+          const r = RARITY[card.rarity];
+          slot.innerHTML = `<div style="color:${r.border};font-weight:600;">${sel}</div><div style="font-size:11px;color:${r.border};">${r.label} ${'★'.repeat(r.stars)}</div>`;
+          slot.classList.add('selected');
+          slot.style.borderColor = r.border;
+        } else {
+          slot.innerHTML = `选择卡牌${idx + 1}`;
+          slot.classList.remove('selected');
+          slot.style.borderColor = '';
+          slot.style.opacity = '0.7';
+        }
+      });
+      fusionGoBtn.disabled = !(fusionSelected[0] && fusionSelected[1]);
+    }
+
+    function renderFusionRarityInfo() {
+      const counts = getCollectionCounts();
+      const rarityCounts = {};
+      RARITY_KEYS.forEach(k => { rarityCounts[k] = 0; });
+      Object.keys(counts).forEach(name => {
+        const card = CARD_POOL.find(c => c.name === name);
+        if (card) rarityCounts[card.rarity] += counts[name];
+      });
+      let html = '<div style="font-size:12px;opacity:0.8;">当前卡牌稀有度统计：</div>';
+      RARITY_KEYS.forEach(k => {
+        const r = RARITY[k];
+        html += `<div style="font-size:12px;color:${r.border};">${r.label}：${rarityCounts[k]}张</div>`;
+      });
+      fusionRarityList.innerHTML = html;
+    }
+
+    function openFusionPick(slotIdx) {
+      fusionPickingSlot = slotIdx;
+      fusionPickGrid.innerHTML = '';
+      const counts = getCollectionCounts();
+      const otherSlot = slotIdx === 0 ? 1 : 0;
+      const otherName = fusionSelected[otherSlot];
+      let targetRarity = null;
+      if (otherName) {
+        const otherCard = CARD_POOL.find(c => c.name === otherName);
+        targetRarity = otherCard.rarity;
+      }
+
+      // Show cards from collection that match the needed rarity
+      const availableCards = [];
+      Object.keys(counts).forEach(name => {
+        const card = CARD_POOL.find(c => c.name === name);
+        if (!card) return;
+        if (card.rarity === 'mythic') return; // can't fuse mythic
+        if (targetRarity && card.rarity !== targetRarity) return;
+        const count = counts[name];
+        // If this card is already selected in the other slot, need at least 2
+        const isOther = (name === otherName);
+        const available = isOther ? count - 1 : count;
+        if (available > 0) {
+          availableCards.push({ name: card.name, rarity: card.rarity, count: available });
+        }
+      });
+
+      if (availableCards.length === 0) {
+        fusionPickGrid.innerHTML = '<div style="grid-column:1/-1;text-align:center;opacity:0.6;font-size:13px;">没有可用的卡牌。需要两张相同稀有度的卡牌才能融合。</div>';
+      } else {
+        availableCards.forEach(c => {
+          const r = RARITY[c.rarity];
+          const div = document.createElement('div');
+          div.className = 'fusion-pick-card';
+          div.innerHTML = `<div style="color:${r.border};font-weight:600;">${c.name}</div><div style="font-size:10px;color:${r.border};">${r.label} ×${c.count}</div>`;
+          div.addEventListener('click', () => {
+            fusionSelected[fusionPickingSlot] = c.name;
+            renderFusionSlots();
+            fusionPickOverlay.classList.add('hidden');
+          });
+          fusionPickGrid.appendChild(div);
+        });
+      }
+      fusionPickOverlay.classList.remove('hidden');
+    }
+
+    fusionSlot1.addEventListener('click', () => openFusionPick(0));
+    fusionSlot2.addEventListener('click', () => openFusionPick(1));
+    fusionPickCloseBtn.addEventListener('click', () => fusionPickOverlay.classList.add('hidden'));
+
+    function performFusion() {
+      const name1 = fusionSelected[0];
+      const name2 = fusionSelected[1];
+      if (!name1 || !name2) return;
+      const card1 = CARD_POOL.find(c => c.name === name1);
+      const card2 = CARD_POOL.find(c => c.name === name2);
+      if (!card1 || !card2) return;
+      if (card1.rarity !== card2.rarity) {
+        fusionMsg.textContent = '两张卡牌稀有度不同，无法融合！';
+        fusionMsg.style.color = '#ff6b81';
+        return;
+      }
+      if (card1.rarity === 'mythic') {
+        fusionMsg.textContent = '神话卡牌无法继续融合！';
+        fusionMsg.style.color = '#ff6b81';
+        return;
+      }
+
+      // Find and remove 2 cards from archiveCards
+      let removed = 0;
+      const toRemove = [];
+      for (let i = archiveCards.length - 1; i >= 0 && removed < 2; i--) {
+        if (archiveCards[i].name === name1 || archiveCards[i].name === name2) {
+          // Make sure we remove one of each (or two of the same if name1===name2)
+          if (removed === 0 || (name1 === name2) || archiveCards[i].name === name2) {
+            toRemove.push(i);
+            removed++;
+          }
+        }
+      }
+      if (removed < 2) {
+        fusionMsg.textContent = '卡牌数量不足！';
+        fusionMsg.style.color = '#ff6b81';
+        return;
+      }
+
+      // Fusion animation
+      fusionGoBtn.disabled = true;
+      fusionMsg.textContent = '融合中...';
+      fusionMsg.style.color = 'var(--accent)';
+
+      // Animate slots
+      gsap.to(fusionSlot1, { scale: 0.8, opacity: 0.5, duration: 0.3 });
+      gsap.to(fusionSlot2, { scale: 0.8, opacity: 0.5, duration: 0.3 });
+
+      setTimeout(() => {
+        // Remove cards from archive
+        toRemove.sort((a, b) => b - a);
+        toRemove.forEach(idx => {
+          const entry = archiveCards[idx];
+          cardGroup.remove(entry.mesh);
+          entry.geo.dispose();
+          entry.mat.dispose();
+          entry.tex.dispose();
+          archiveCards.splice(idx, 1);
+        });
+        focusIndex = Math.max(0, Math.min(focusIndex, archiveCards.length - 1));
+        layoutArchiveCards(false);
+
+        // Determine next rarity
+        const currentRarityIdx = RARITY_KEYS.indexOf(card1.rarity);
+        const nextRarityKey = RARITY_KEYS[currentRarityIdx + 1];
+        const candidates = CARD_POOL.filter(c => c.rarity === nextRarityKey);
+        const resultCard = candidates[Math.floor(Math.random() * candidates.length)];
+
+        // Draw the fused card
+        const rainbowMode = rainbowModeEl.checked;
+        const r = RARITY[nextRarityKey];
+        const tex = textureFromBase64(null, resultCard.name, nextRarityKey, rainbowMode);
+        const geo = new THREE.PlaneGeometry(8, 12);
+        const mat = new THREE.MeshStandardMaterial({
+          map: tex,
+          metalness: nextRarityKey === 'mythic' ? 0.3 : 0.18,
+          roughness: rainbowMode ? 0.55 : 0.38,
+          emissive: rainbowMode ? 0x050810 : parseInt(r.glow.slice(1), 16),
+          emissiveIntensity: 0.6,
+          transparent: true,
+          opacity: 1
+        });
+        const card = new THREE.Mesh(geo, mat);
+        card.position.set(0, 0, -5);
+        card.scale.set(0.01, 0.01, 0.01);
+        cardGroup.add(card);
+        archiveCards.push({ name: resultCard.name, rarity: nextRarityKey, mesh: card, geo, mat, tex, createdAt: Date.now() });
+        collectedCards.add(resultCard.name);
+        focusIndex = archiveCards.length - 1;
+
+        // Fusion reveal animation
+        const tl = gsap.timeline();
+        tl.to(card.scale, { x: 0.66, y: 0.66, z: 0.66, duration: 0.6, ease: 'elastic.out(1, 0.5)' })
+          .to(card.position, { z: 1.5, y: 0.4, duration: 0.4, ease: 'power2.out' }, '<')
+          .to(card.rotation, { y: Math.PI * 2, duration: 0.8, ease: 'power2.out' }, '<');
+
+        spawnParticleBurst(card.position.clone(), parseInt(r.border.slice(1), 16), 80);
+        playDrawSound(nextRarityKey);
+        triggerScreenFlash(r.border);
+
+        setTimeout(() => layoutArchiveCards(true), 800);
+
+        fusionMsg.innerHTML = `<span style="color:${r.border};">融合成功！获得 [${r.label}] ${resultCard.name} ${'★'.repeat(r.stars)}</span>`;
+        fusionSelected = [null, null];
+        renderFusionSlots();
+        gsap.to(fusionSlot1, { scale: 1, opacity: 0.7, duration: 0.3 });
+        gsap.to(fusionSlot2, { scale: 1, opacity: 0.7, duration: 0.3 });
+        renderFusionRarityInfo();
+      }, 800);
+    }
+
+    fusionGoBtn.addEventListener('click', performFusion);
+
+    fusionBtn.addEventListener('click', () => {
+      fusionSelected = [null, null];
+      renderFusionSlots();
+      renderFusionRarityInfo();
+      fusionMsg.textContent = '';
+      fusionOverlay.classList.remove('hidden');
+    });
+    fusionCloseBtn.addEventListener('click', () => fusionOverlay.classList.add('hidden'));
+
+    // ══════════════════════════════════════════════
+    //  🌌 Feature 4: Cosmic Events System (宇宙事件)
+    // ══════════════════════════════════════════════
+    const cosmicBanner = document.getElementById('cosmicBanner');
+    const eventIndicator = document.getElementById('eventIndicator');
+    const eventDot = document.getElementById('eventDot');
+    const eventLabel = document.getElementById('eventLabel');
+
+    const COSMIC_EVENTS = [
+      {
+        id: 'meteor_shower',
+        name: '流星雨',
+        color: '#4a9eff',
+        description: '接下来3次抽卡稀有及以上概率+50%！',
+        duration: null, // lasts for 3 draws
+        drawsLeft: 3,
+      },
+      {
+        id: 'supernova',
+        name: '超新星爆发',
+        color: '#b44aff',
+        description: '下次抽卡必定史诗或以上！',
+        duration: null,
+        drawsLeft: 1,
+      },
+      {
+        id: 'dark_matter',
+        name: '暗物质潮汐',
+        color: '#ff78f3',
+        description: '20秒内所有稀有度权重被打乱！',
+        duration: 20000,
+        drawsLeft: null,
+      },
+      {
+        id: 'cosmic_blessing',
+        name: '星际祝福',
+        color: '#73f5ff',
+        description: '下次抽卡无冷却！',
+        duration: null,
+        drawsLeft: 1,
+      },
+    ];
+
+    let activeCosmicEvent = null;
+    let cosmicEventTimer = null;
+    let darkMatterWeights = null;
+
+    function triggerCosmicEvent() {
+      const event = COSMIC_EVENTS[Math.floor(Math.random() * COSMIC_EVENTS.length)];
+      activeCosmicEvent = { ...event, startTime: Date.now() };
+
+      // Show banner
+      cosmicBanner.style.background = `linear-gradient(90deg, ${event.color}44, ${event.color}88, ${event.color}44)`;
+      cosmicBanner.style.color = event.color;
+      cosmicBanner.style.boxShadow = `0 0 40px ${event.color}44`;
+      cosmicBanner.textContent = `🌌 ${event.name} — ${event.description}`;
+      cosmicBanner.style.top = '0px';
+
+      setTimeout(() => {
+        cosmicBanner.style.top = '-80px';
+      }, 4000);
+
+      // Show indicator
+      eventDot.style.background = event.color;
+      eventLabel.textContent = `${event.name} 生效中`;
+      eventLabel.style.color = event.color;
+      eventIndicator.style.display = 'block';
+
+      // Handle dark matter
+      if (event.id === 'dark_matter') {
+        // Shuffle weights
+        const weights = RARITY_KEYS.map(k => RARITY[k].weight);
+        for (let i = weights.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [weights[i], weights[j]] = [weights[j], weights[i]];
+        }
+        darkMatterWeights = {};
+        RARITY_KEYS.forEach((k, i) => { darkMatterWeights[k] = weights[i]; });
+        setTimeout(() => {
+          if (activeCosmicEvent && activeCosmicEvent.id === 'dark_matter') {
+            darkMatterWeights = null;
+            activeCosmicEvent = null;
+            eventIndicator.style.display = 'none';
+          }
+        }, event.duration);
+      }
+
+      // Schedule next event
+      scheduleNextCosmicEvent();
+    }
+
+    function scheduleNextCosmicEvent() {
+      if (cosmicEventTimer) clearTimeout(cosmicEventTimer);
+      const delay = (45 + Math.random() * 45) * 1000; // 45-90 seconds
+      cosmicEventTimer = setTimeout(triggerCosmicEvent, delay);
+    }
+
+    // Start cosmic events after a delay
+    setTimeout(scheduleNextCosmicEvent, 30000);
+
+    // ══════════════════════════════════════════════
+    //  🔍 Feature 5: Card Detail Popup (卡牌详情)
+    // ══════════════════════════════════════════════
+    const detailOverlay = document.getElementById('detailOverlay');
+    const detail3D = document.getElementById('detail3D');
+    const detailInfo = document.getElementById('detailInfo');
+    const detailCloseBtn = document.getElementById('detailCloseBtn');
+    const detailBtn = document.getElementById('detailBtn');
+
+    let detailRenderer = null;
+    let detailScene = null;
+    let detailCamera = null;
+    let detailCard = null;
+    let detailAnimId = null;
+
+    function openCardDetail() {
+      if (focusIndex < 0 || !archiveCards[focusIndex]) {
+        toast('请先抽一张卡牌！');
+        return;
+      }
+      const entry = archiveCards[focusIndex];
+      const card = CARD_POOL.find(c => c.name === entry.name) || { name: entry.name, rarity: entry.rarity, flavor: '未知的宇宙力量。' };
+      const r = RARITY[card.rarity];
+      const powerLevel = Math.floor(Math.random() * 9000 + 1000);
+
+      // Setup 3D detail view
+      if (!detailRenderer) {
+        detailRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        detailRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        detailScene = new THREE.Scene();
+        detailCamera = new THREE.PerspectiveCamera(50, 200 / 300, 0.1, 100);
+        detailCamera.position.set(0, 0, 5);
+        const dAmbient = new THREE.AmbientLight(0xffffff, 0.7);
+        const dPoint = new THREE.PointLight(0x9dd6ff, 1.2, 50);
+        dPoint.position.set(3, 4, 5);
+        detailScene.add(dAmbient, dPoint);
+      }
+      detailRenderer.setSize(200, 300);
+      detail3D.innerHTML = '';
+      detail3D.appendChild(detailRenderer.domElement);
+
+      // Remove old card
+      if (detailCard) {
+        detailScene.remove(detailCard);
+        detailCard.geometry.dispose();
+        detailCard.material.dispose();
+      }
+
+      // Create card for detail view
+      const tex = textureFromBase64(null, card.name, card.rarity, false);
+      const geo = new THREE.PlaneGeometry(3, 4.5);
+      const mat = new THREE.MeshStandardMaterial({
+        map: tex,
+        metalness: 0.2,
+        roughness: 0.4,
+        emissive: parseInt(r.glow.slice(1), 16),
+        emissiveIntensity: 0.4,
+      });
+      detailCard = new THREE.Mesh(geo, mat);
+      detailScene.add(detailCard);
+
+      // Start rotation animation
+      if (detailAnimId) cancelAnimationFrame(detailAnimId);
+      function animateDetail() {
+        detailAnimId = requestAnimationFrame(animateDetail);
+        if (detailCard) {
+          detailCard.rotation.y += 0.015;
+        }
+        detailRenderer.render(detailScene, detailCamera);
+      }
+      animateDetail();
+
+      // Show info
+      detailInfo.innerHTML = `
+        <div class="detail-stat-row"><span>名称</span><strong style="color:${r.border};">${card.name}</strong></div>
+        <div class="detail-stat-row"><span>稀有度</span><span style="color:${r.border};">${r.label}</span></div>
+        <div class="detail-stat-row"><span>星级</span><span style="color:${r.border};">${'★'.repeat(r.stars)}${'☆'.repeat(5 - r.stars)}</span></div>
+        <div class="detail-stat-row"><span>力量等级</span><span style="color:${r.border};">${powerLevel}</span></div>
+        <div class="detail-flavor">"${card.flavor || '未知的宇宙力量。'}"</div>
+      `;
+
+      detailOverlay.classList.remove('hidden');
+    }
+
+    detailBtn.addEventListener('click', openCardDetail);
+    detailCloseBtn.addEventListener('click', () => {
+      detailOverlay.classList.add('hidden');
+      if (detailAnimId) {
+        cancelAnimationFrame(detailAnimId);
+        detailAnimId = null;
+      }
+    });
+
+    // Double-click on canvas to show detail
+    canvas.addEventListener('dblclick', () => {
+      if (focusIndex >= 0 && archiveCards[focusIndex]) {
+        openCardDetail();
+      }
+    });
+
+    // ══════════════════════════════════════════════
+    //  🔧 Patched draw logic note
+    // ══════════════════════════════════════════════
+    // drawCard() calls patchedDrawRandomCard() which respects:
+    // - fortuneBoostRarity (from Fortune Wheel)
+    // - darkMatterWeights (from Dark Matter Tide event)
+    // - activeCosmicEvent (meteor_shower, supernova, cosmic_blessing)
+    // Post-draw: fortuneBoostRarity resets after 1 draw,
+    //            cosmic event drawsLeft decrements after each draw.
+
     })();
   </script>
 </body>
